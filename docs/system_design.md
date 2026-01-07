@@ -1,3 +1,5 @@
+# System Design Document
+## 1. Overview
 ```mermaid
 graph TD
 	A(Network Sniffer)
@@ -16,3 +18,11 @@ graph TD
 	E --> G
 	G --> H
 	F --> H --> I --> J --> K --> L --> G
+```
+## 2. Architecture
+### 2.1 Packet Capture
+### 2.2 Flow Table
+### 2.3 Feature Extraction
+### 2.4 Model Inference
+### 2.5 Risk Aggregation
+### 2.6 Dashboard
