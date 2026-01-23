@@ -2,8 +2,14 @@ import pandas as pd
 import numpy as np
 import ipaddress
 
-def drop(df):
+def drop(df, handle_benign):
     df.columns = df.columns.str.strip()
+    if handle_benign == 'DROP':
+        df = df[df['Label'] != 'BENIGN']
+        df = df.drop('Label', axis=1)
+    if handle_benign == 'KEEP':
+        df = df[df['Label'] == 'BENIGN']
+        df = df.drop('Label', axis=1)
     return df.drop(columns=['Timestamp', 'Flow Packets/s', 'Fwd PSH Flags',
        'Bwd PSH Flags', 'Fwd URG Flags', 'Bwd URG Flags',
        'Fwd Header Length', 'Bwd Header Length', 'Fwd Packets/s',
@@ -19,15 +25,12 @@ def drop(df):
        'Active Std', 'Idle Std', 'Fwd Packet Length Std', 'Bwd Packet Length Std',
        'Flow IAT Std', 'Fwd IAT Std', 'Bwd IAT Std'])
 
-def create_dataframe(paths, label):
-    exception_path = 'datasets/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv'
+def create_dataframe(paths, label, handle_benign=None):
     df = pd.DataFrame()
 
     for path in paths:
-        if path.endswith(exception_path):
-            df = pd.concat([df, drop(pd.read_csv(path, encoding='latin1', low_memory=False))], ignore_index=True)
-            continue
-        df = pd.concat([df, drop(pd.read_csv(path))], ignore_index=True)
+        df = pd.concat([df, drop(pd.read_csv(path, encoding='latin1', low_memory=False), handle_benign=handle_benign)], ignore_index=True)
+
 
     df.to_csv(f'CICIDS2017_{label}.csv', index=False)
 
@@ -57,6 +60,7 @@ def is_private(ip):
 
 def extract_features_training(df):
     df.columns = df.columns.str.strip()
+
     fwd = df['Total Fwd Packets']
     bwd = df['Total Backward Packets']
     syn = df['SYN Flag Count']
@@ -67,8 +71,12 @@ def extract_features_training(df):
 
     features = pd.DataFrame()
 
-    proto_onehot = pd.get_dummies(df['Protocol'], prefix='proto').astype(np.float32)
+    all_protocols = [0, 6, 17]
+    df['Protocol'] = pd.to_numeric(df['Protocol'], errors='coerce').fillna(0).astype(int)
+    df['Protocol'] = pd.Categorical(df['Protocol'], categories=all_protocols)
+    proto_onehot = pd.get_dummies(df['Protocol'], prefix='proto', dtype=int)
     features = pd.concat([features, proto_onehot], axis=1)
+
     features['Port'] = df['Destination Port'].apply(lambda x: 0 if x <= 1023 else 1 if x <= 49151 else 2)
     features['IP'] = df['Destination IP'].apply(is_private)
     features['Duration'] = duration / 1_000_000
@@ -128,6 +136,8 @@ def extract_features_training(df):
     features = features.clip(-1e6, 1e6)
     features = features.astype(np.float32)
 
-    labels = df['Label'].apply(lambda x: 0 if x == 'BENIGN' else 1)
+    if 'Label' in df.columns:
+        labels = df['Label'].apply(lambda x: 0 if x == 'BENIGN' else 1)
+        return features, labels
 
-    return features, labels
+    return features
