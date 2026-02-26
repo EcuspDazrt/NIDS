@@ -3,15 +3,15 @@ import pandas as pd
 
 # initialize training and eval raw datasets
 BASE_DIR = Path(__file__).resolve().parents[1]
-paths_training = [f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-                  f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-                  f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-                  f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv']
+paths_training = ['../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
+                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
+                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
+                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv']
 
-paths_testing =  [f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
-                  f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
-                  f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
-                  f'{BASE_DIR}/datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
+paths_testing =  ['../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
+                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
+                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
+                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
 
 def drop(df, handle_benign):
     df.columns = df.columns.str.strip()
