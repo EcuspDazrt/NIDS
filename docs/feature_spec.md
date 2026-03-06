@@ -103,7 +103,7 @@ IAT - arrival time between two packets of the same direction
 | Duration                     | last seen time - start time                                                                        | -            | Both  |
 | In/out Ratio                 | forward packets / backward packets                                                                 | -            | Both  |
 | Absolute Difference          | abs(forward packets - backward packets) / (forward packets + backward packets)                     | -            | AE    |
-| Byte Rate Asymmetry          | abs(forward packets - backward packets) / (forward packets + backward packets)                     | -            | AE    |
+| Byte Rate Asymmetry          | abs(forward packets / duration) - (backward packets / duration)                                    | -            | AE    |
 | Total Packets                | forward packets + backward packets                                                                 | -            | RF    |
 | Total Bytes                  | forward bytes + backward bytes                                                                     | -            | RF    |
 | Total Packet Rate            | (forward packets + backward packets) / (last seen time - start time)                               | -            | RF    |
