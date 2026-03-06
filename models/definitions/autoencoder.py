@@ -1,6 +1,9 @@
 import torch.nn as nn
 import torch
 
+from pathlib import Path
+BASE_DIR = Path(__file__).parent
+
 # model structure
 class AutoEncoder(nn.Module):
     def __init__(self, n_features):
@@ -25,8 +28,8 @@ class AutoEncoder(nn.Module):
 
 # meant to be used FROM other files. Do not run from this local file; it will not find the artifact
 def construct_model(load=True):
-    n_features = 21
+    n_features = 20
     model = AutoEncoder(n_features=n_features)
     if load:
-        model.load_state_dict(torch.load('../models/artifacts/ae_model.pt'))
+        model.load_state_dict(torch.load(BASE_DIR.parent/'artifacts'/'ae_model.pt'))
     return model

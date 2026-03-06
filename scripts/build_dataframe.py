@@ -2,16 +2,25 @@ from pathlib import Path
 import pandas as pd
 
 # initialize training and eval raw datasets
-BASE_DIR = Path(__file__).resolve().parents[1]
-paths_training = ['../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv']
+BASE_DIR = Path(__file__).parent
+paths_training = [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
+                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
+                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
+                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv']
 
-paths_testing =  ['../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
-                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
-                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
-                  '../datasets/raw/CICIDS2017/GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
+paths_testing =  [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
+                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
+                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
+                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
+
+all_paths = [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
 
 def drop(df, handle_benign):
     df.columns = df.columns.str.strip()
@@ -63,7 +72,7 @@ def create_dataframe(paths, label, handle_benign=None):
     for path in paths:
         df = pd.concat([df, drop(pd.read_csv(path, encoding='latin1', low_memory=False), handle_benign=handle_benign)], ignore_index=True)
 
-    df.to_csv(f'../datasets/raw/CICIDS2017/Aggregated/CICIDS2017_{label}.csv', index=False)
+    df.to_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated'/'CICIDS2017_{label}.csv', index=False)
 
 def init_dataframes():
     create_dataframe(paths_testing, 'ae_testing_benign', handle_benign='KEEP')
@@ -71,3 +80,11 @@ def init_dataframes():
     create_dataframe(paths_testing, 'rf_testing')
     create_dataframe(paths_training, 'ae_training', handle_benign='KEEP')
     create_dataframe(paths_training, 'rf_training')
+
+# df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated'/'CICIDS2017_total_flow.csv', encoding='latin1', low_memory=False)
+# df.columns = df.columns.str.strip()
+# labels = df['Label']
+#
+# print(df.info)
+# print(df.describe())
+# print(labels.value_counts())

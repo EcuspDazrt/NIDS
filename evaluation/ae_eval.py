@@ -4,11 +4,15 @@ import pandas as pd
 from scripts.build_dataset import create_dataset
 from models.definitions.autoencoder import construct_model
 
+from pathlib import Path
+BASE_DIR = Path(__file__).parent
+
 def evaluate_model(show_error_flag=True):
     model = construct_model()
     model.eval()
 
-    THRESHOLD = 0.113147736
+    THRESHOLD = 0.0789558
+    # 0.113147736
 
     def show_error(X, label, expected: int):
         with torch.no_grad():
@@ -27,9 +31,9 @@ def evaluate_model(show_error_flag=True):
             print(f'{label}: {round(out * 100, 1)}% total reconstruction error, expected {100 if expected else 0}%')
             return correct, wrong
 
-
-    features_benign = pd.read_csv(f'../datasets/processed/ae_testing_benign.csv', low_memory=False)
+    features_benign = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_benign.csv', low_memory=False)
     X_benign = create_dataset(features_benign, loader=False)
+
     recon = model(X_benign)
     error = ((X_benign - recon) ** 2).mean(dim=1)
     print("Validation error stats:",
@@ -38,7 +42,7 @@ def evaluate_model(show_error_flag=True):
           error.max())
 
     if show_error_flag:
-        features_malicious = pd.read_csv(f'../datasets/processed/ae_testing_malicious.csv', low_memory=False)
+        features_malicious = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_malicious.csv', low_memory=False)
         X_malicious = create_dataset(features_malicious, loader=False)
 
         true_pos, false_neg = show_error(X_malicious, 'Malicious', True)
