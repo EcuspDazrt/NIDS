@@ -1,149 +1,350 @@
 import customtkinter as ctk
-from PIL import Image
+from collections import deque
+from datetime import datetime
 
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
 
-ctk.set_widget_scaling(1.0)
-ctk.set_window_scaling(1.0)
+BG       = "#0F1117"
+SURFACE  = "#161B22"
+SURFACE2 = "#1C2128"
+BORDER   = "#30363D"
+TEXT     = "#E6EDF3"
+TEXT_DIM = "#7D8590"
+ACCENT   = "#388BFD"
+
+LEVEL_COLORS = {
+    "safe":      {"bg": "#0D2818", "fg": "#57A87A", "border": "#1D4D30"},
+    "potential": {"bg": "#221C08", "fg": "#B8932A", "border": "#4A3C10"},
+    "likely":    {"bg": "#221408", "fg": "#C07030", "border": "#4A2C10"},
+    "danger":    {"bg": "#220C0C", "fg": "#B84040", "border": "#4A1818"},
+}
+
+AE_LEVEL_COLORS = {
+    "normal":     "#57A87A",
+    "elevated":   "#B8932A",
+    "suspicious": "#C07030",
+    "severe":     "#B84040",
+}
+
+RF_LABELS  = ["safe", "potential", "likely", "danger"]
+RF_DISPLAY = ["Safe", "Potential", "Likely", "Danger"]
+AE_LABELS  = ["normal", "elevated", "suspicious", "severe"]
+
+BASELINE_WINDOW = 20
+FONT = "Consolas"   # sharp monospace on Windows, falls back on other OS
+
+
+class SectionCard(ctk.CTkFrame):
+    def __init__(self, parent, title="", **kwargs):
+        super().__init__(parent, fg_color=SURFACE, corner_radius=8,
+                         border_width=1, border_color=BORDER, **kwargs)
+        if title:
+            ctk.CTkLabel(self, text=title, font=(FONT, 10),
+                         text_color=TEXT_DIM).pack(anchor="w", padx=16, pady=(12, 0))
+
+
+class RiskRow(ctk.CTkFrame):
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, fg_color=SURFACE2, corner_radius=6,
+                         border_width=1, border_color=BORDER, **kwargs)
+        self._tiles = {}
+        for col, (key, disp) in enumerate(zip(RF_LABELS, RF_DISPLAY)):
+            tile = ctk.CTkFrame(self, fg_color="transparent", corner_radius=5)
+            tile.grid(row=0, column=col, padx=4, pady=4, sticky="nsew")
+            self.grid_columnconfigure(col, weight=1)
+            lbl = ctk.CTkLabel(tile, text=disp, font=(FONT, 13, "bold"),
+                               text_color=TEXT_DIM)
+            lbl.pack(expand=True, fill="both", padx=2, pady=8)
+            self._tiles[key] = (tile, lbl)
+
+    def set_level(self, level: str):
+        for key, (tile, lbl) in self._tiles.items():
+            if key == level:
+                c = LEVEL_COLORS[key]
+                tile.configure(fg_color=c["bg"], border_width=1, border_color=c["border"])
+                lbl.configure(text_color=c["fg"])
+            else:
+                tile.configure(fg_color="transparent", border_width=0)
+                lbl.configure(text_color=TEXT_DIM)
+
 
 class App(ctk.CTk):
-    instance = None
-    counter = 0
-
-    def __init__(self, results_queue):
-        App.instance = self
+    def __init__(self, results_queue, stop_event=None, models_ready=None):
         super().__init__()
-        self.title('NIDS Dashboard')
-        self.geometry('900x500')
-        self.configure(fg_color='#120303')
-        self.resizable(False, False)
-        self.colors = ['#361010', '#360A0A']
-        self.rf_widgets = []
-        self.rf_levels = ['safe', 'potential', 'likely', 'danger']
-        self.rf_coordinates = {'safe':(62, 92),'potential':(231, 92),'likely':(438, 93),'danger':(614, 92)}
-        self.ae_widgets = []
-        self.digit_coordinates = [(84, 290), (103, 290), (123, 290)]
-        self.digit_widgets = []
-        self.text_coordinates = [(105, 290), (124, 290), (145, 290)]
-        self.text_widgets = []
         self.results_queue = results_queue
+        self.stop_event    = stop_event   # multiprocessing.Event — optional
+        self.models_ready  = models_ready
+        self.is_running    = False
+        self.is_paused     = False
+        self.flow_count    = 0
+        self._baseline_buf = deque(maxlen=BASELINE_WINDOW)
+        self._recent       = deque(maxlen=12)
 
-        self.root = ctk.CTkFrame(self, corner_radius=0)
-        self.root.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.title("NIDS")
+        self.geometry("900x490")
+        self.resizable(False, False)
+        self.configure(fg_color=BG)
+        self._build_ui()
 
-        self.bg_image = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'Frame.png'), dark_image=Image.open(BASE_DIR/'resources'/'Frame.png'), size=(900, 500))
-        self.bg_label = ctk.CTkLabel(self.root, image=self.bg_image, text="", bg_color='#483941')
-        self.bg_label.place(relx=0, rely=0, relwidth=1, relheight=1)
+        if self.models_ready:
+            self._poll_ready()
 
-        self.start_anomaly_bar = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'start_anomaly_bar.png'), dark_image=Image.open(BASE_DIR/'resources'/'start_anomaly_bar.png'), size=(22, 30))
-        self.start_anomaly_bar = ctk.CTkLabel(self.bg_label, image=self.start_anomaly_bar, text="", bg_color='#483941')
+    def _build_ui(self):
+        # Header
+        hdr = ctk.CTkFrame(self, fg_color="transparent", height=48)
+        hdr.pack(fill="x", padx=24, pady=(16, 0))
+        hdr.pack_propagate(False)
 
-        self.anomaly_bar = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'anomaly_bar.png'), dark_image=Image.open(BASE_DIR/'resources'/'anomaly_bar.png'), size=(1, 30))
-        self.anomaly_bar = ctk.CTkLabel(self.root, image=self.anomaly_bar, text="")
+        ctk.CTkLabel(hdr, text="NIDS", font=(FONT, 20, "bold"),
+                     text_color=TEXT).pack(side="left", anchor="center")
+        ctk.CTkLabel(hdr, text="Network Intrusion Detection System",
+                     font=(FONT, 11), text_color=TEXT_DIM).pack(
+                         side="left", anchor="center", padx=(10, 0), pady=(4, 0))
 
-        self.safe_img = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'safe.png'), dark_image=Image.open(BASE_DIR/'resources'/'safe.png'), size=(240, 160))
-        self.safe_img = ctk.CTkLabel(self.bg_label, image=self.safe_img, text="", bg_color='#483941')
-        self.rf_widgets.append(self.safe_img)
+        sf = ctk.CTkFrame(hdr, fg_color="transparent")
+        sf.pack(side="right", anchor="center")
+        self.status_dot = ctk.CTkLabel(sf, text="●", font=(FONT, 13),
+                                        text_color=TEXT_DIM)
+        self.status_dot.pack(side="left")
+        self.status_lbl = ctk.CTkLabel(sf, text="IDLE", font=(FONT, 11),
+                                        text_color=TEXT_DIM)
+        self.status_lbl.pack(side="left", padx=(4, 0))
 
-        self.potential_img = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'potential_threat.png'), dark_image=Image.open(BASE_DIR/'resources'/'potential_threat.png'), size=(280, 160))
-        self.potential_img = ctk.CTkLabel(self.bg_label, image=self.potential_img, text="", bg_color='#483941')
-        self.rf_widgets.append(self.potential_img)
+        ctk.CTkFrame(self, fg_color=BORDER, height=1).pack(
+            fill="x", padx=24, pady=(10, 0))
 
-        self.likely_img = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'threat_likely.png'), dark_image=Image.open(BASE_DIR/'resources'/'threat_likely.png'), size=(241, 160))
-        self.likely_img = ctk.CTkLabel(self.bg_label, image=self.likely_img, text="", bg_color='#483941')
-        self.rf_widgets.append(self.likely_img)
+        # Body
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=24, pady=12)
 
-        self.danger_img = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'danger.png'), dark_image=Image.open(BASE_DIR/'resources'/'danger.png'), size=(240, 160))
-        self.danger_img = ctk.CTkLabel(self.bg_label, image=self.danger_img, text="", bg_color='#483941')
-        self.rf_widgets.append(self.danger_img)
+        left  = ctk.CTkFrame(body, fg_color="transparent")
+        right = ctk.CTkFrame(body, fg_color="transparent", width=220)
+        left.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        right.pack(side="right", fill="y")
+        right.pack_propagate(False)
 
-        for _ in range(3):
-            for i in range(10):
-                number_img = ctk.CTkImage(light_image=Image.open(f"{BASE_DIR}/resources/{i}.png"), dark_image=Image.open(f"{BASE_DIR}/resources/{i}.png"), size=(20, 39))
-                number_img = ctk.CTkLabel(self.bg_label, image=number_img, text="", bg_color='#483941')
-                self.ae_widgets.append(number_img)
+        self._build_rf_card(left)
+        self._build_ae_card(left)
+        self._build_activity_strip(left)
+        self._build_right_column(right)
 
-        self.normal_text = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'normal.png'), dark_image=Image.open(BASE_DIR/'resources'/'normal.png'), size=(161, 39))
-        self.normal_text = ctk.CTkLabel(self.bg_label, image=self.normal_text, text="", bg_color='#483941')
-        self.text_widgets.append(self.normal_text)
+    def _build_rf_card(self, parent):
+        card = SectionCard(parent, title="ATTACK RISK")
+        card.pack(fill="x", pady=(0, 8))
+        self.risk_row = RiskRow(card, height=50)
+        self.risk_row.pack(fill="x", padx=12, pady=(6, 12))
 
-        self.elevated_text = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'elevated.png'), dark_image=Image.open(BASE_DIR/'resources'/'elevated.png'), size=(179, 39))
-        self.elevated_text = ctk.CTkLabel(self.bg_label, image=self.elevated_text, text="", bg_color='#483941')
-        self.text_widgets.append(self.elevated_text)
+    def _build_ae_card(self, parent):
+        card = SectionCard(parent, title="ANOMALOUS BEHAVIOUR")
+        card.pack(fill="x", pady=(0, 8))
 
-        self.suspicious_text = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'suspicious.png'), dark_image=Image.open(BASE_DIR/'resources'/'suspicious.png'), size=(209, 44))
-        self.suspicious_text = ctk.CTkLabel(self.bg_label, image=self.suspicious_text, text="", bg_color='#483941')
-        self.text_widgets.append(self.suspicious_text)
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=(6, 14))
 
-        self.severe_text = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'severe.png'), dark_image=Image.open(BASE_DIR/'resources'/'severe.png'), size=(153, 39))
-        self.severe_text = ctk.CTkLabel(self.bg_label, image=self.severe_text, text="", bg_color='#483941')
-        self.text_widgets.append(self.severe_text)
+        score_row = ctk.CTkFrame(inner, fg_color="transparent")
+        score_row.pack(fill="x", pady=(0, 8))
 
-        self.btn = ctk.CTkButton(self.root, text="Start capture/inference", command=self.start)
-        self.btn.pack()
+        self.ae_pct_label = ctk.CTkLabel(score_row, text="—",
+                                          font=(FONT, 38, "bold"), text_color=TEXT)
+        self.ae_pct_label.pack(side="left")
 
-    def start(self):
+        right_labels = ctk.CTkFrame(score_row, fg_color="transparent")
+        right_labels.pack(side="left", padx=(12, 0), pady=(10, 0))
+
+        self.ae_level_label = ctk.CTkLabel(right_labels, text="",
+                                            font=(FONT, 13), text_color=TEXT_DIM)
+        self.ae_level_label.pack(anchor="w")
+
+        self.ae_baseline_label = ctk.CTkLabel(right_labels, text="",
+                                               font=(FONT, 11), text_color=TEXT_DIM)
+        self.ae_baseline_label.pack(anchor="w", pady=(3, 0))
+
+        self._track = ctk.CTkFrame(inner, fg_color=SURFACE2, height=7,
+                                    corner_radius=4, border_width=1, border_color=BORDER)
+        self._track.pack(fill="x")
+        self._track.pack_propagate(False)
+        self.ae_bar = ctk.CTkFrame(self._track, fg_color=ACCENT,
+                                    height=7, corner_radius=4, width=4)
+        self.ae_bar.place(x=0, y=0, relheight=1)
+
+    def _build_activity_strip(self, parent):
+        card = SectionCard(parent, title="RECENT FLOWS")
+        card.pack(fill="x")
+
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(8, 14))
+
+        self._dot_widgets = []
+        for i in range(12):
+            sq = ctk.CTkFrame(row, width=26, height=26, corner_radius=4,
+                              fg_color=SURFACE2, border_width=1, border_color=BORDER)
+            sq.pack(side="left", padx=3)
+            sq.pack_propagate(False)
+            self._dot_widgets.append(sq)
+
+    def _build_right_column(self, parent):
+        stats = SectionCard(parent, title="SESSION")
+        stats.pack(fill="x", pady=(0, 8))
+
+        g = ctk.CTkFrame(stats, fg_color="transparent")
+        g.pack(fill="x", padx=16, pady=(6, 14))
+
+        def stat(row, label, attr):
+            ctk.CTkLabel(g, text=label, font=(FONT, 11),
+                         text_color=TEXT_DIM).grid(row=row, column=0, sticky="w", pady=3)
+            val = ctk.CTkLabel(g, text="—", font=(FONT, 12, "bold"), text_color=TEXT)
+            val.grid(row=row, column=1, sticky="e", padx=(12, 0), pady=3)
+            setattr(self, attr, val)
+
+        stat(0, "Flows",    "stat_flows")
+        stat(1, "Updated",  "stat_time")
+        stat(2, "Risk",     "stat_rf")
+        stat(3, "Anomaly",  "stat_ae")
+        stat(4, "Baseline", "stat_baseline")
+        g.grid_columnconfigure(1, weight=1)
+
+        # Control buttons
+        btn_card = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=8,
+                                border_width=1, border_color=BORDER)
+        btn_card.pack(fill="x")
+
+        btn_inner = ctk.CTkFrame(btn_card, fg_color="transparent")
+        btn_inner.pack(fill="x", padx=14, pady=14)
+
+        self.start_btn = ctk.CTkButton(
+            btn_inner, text="START CAPTURE",
+            font=(FONT, 13, "bold"),
+            fg_color=ACCENT, hover_color="#2563EB",
+            text_color=TEXT, corner_radius=6, height=40,
+            command=self._on_start
+        )
+        self.start_btn.pack(fill="x", pady=(0, 6))
+
+        self.pause_btn = ctk.CTkButton(
+            btn_inner, text="PAUSE",
+            font=(FONT, 12),
+            fg_color=SURFACE2, hover_color=BORDER,
+            text_color=TEXT_DIM, corner_radius=6, height=34,
+            border_width=1, border_color=BORDER,
+            state="disabled", command=self._on_pause
+        )
+        self.pause_btn.pack(fill="x")
+
+    def _poll_ready(self):
+        if self.models_ready.is_set():
+            self.start_btn.configure(state='normal', text='START CAPTURE')
+            self.status_lbl.configure(text='READY')
+        else:
+            self.start_btn.configure(state='disabled', text='LOADING MODELS...', fg_color=SURFACE2, text_color=TEXT_DIM)
+            self.status_lbl.configure(text='LOADING')
+            self.after(200, self._poll_ready)
+
+    def _on_start(self):
+        if not self.models_ready or not self.models_ready.is_set():
+            return
+        if self.is_running:
+            return
+        self.is_running = True
+        self.is_paused  = False
+        self.start_btn.configure(state="disabled", text="CAPTURING…",
+                                 fg_color=SURFACE2, text_color=TEXT_DIM)
+        self.pause_btn.configure(state="normal", text_color=TEXT)
+        self.status_dot.configure(text_color=AE_LEVEL_COLORS["normal"])
+        self.status_lbl.configure(text="LIVE", text_color=AE_LEVEL_COLORS["normal"])
+        if self.stop_event:
+            self.stop_event.clear()
         self.poll_results()
 
+    def _on_pause(self):
+        if not self.is_running:
+            return
+        if self.is_paused:
+            # Resume
+            self.is_paused = False
+            self.pause_btn.configure(text="PAUSE")
+            self.status_dot.configure(text_color=AE_LEVEL_COLORS["normal"])
+            self.status_lbl.configure(text="LIVE", text_color=AE_LEVEL_COLORS["normal"])
+            if self.stop_event:
+                self.stop_event.clear()
+        else:
+            # Pause
+            self.is_paused = True
+            self.pause_btn.configure(text="RESUME")
+            self.status_dot.configure(text_color=TEXT_DIM)
+            self.status_lbl.configure(text="PAUSED", text_color=TEXT_DIM)
+            if self.stop_event:
+                self.stop_event.set()
+
     def poll_results(self):
-        try:
-            while not self.results_queue.empty():
-                result = self.results_queue.get_nowait()
-                if result is None:
-                    return
-                ae_percent, ae_score, rf_score = result
+        if not self.is_paused:
+            try:
+                if not self.results_queue.empty():
+                    result = self.results_queue.get_nowait()
+                    if result is not None:
+                        ae_percent, ae_category, rf_category = result
+                        self._update(ae_percent, ae_category, rf_category)
+            except Exception:
+                pass
+        self.after(1000, self.poll_results)
 
-                self.remove_all()
-                self.place_rf(self.rf_widgets[rf_score], self.rf_levels[rf_score])
-                self.display_ae(ae_score, ae_percent)
-        except:
-            pass
+    def _update(self, ae_percent: int, ae_category: int, rf_category: int):
+        self.flow_count += 1
+        rf_level = RF_LABELS[rf_category]
+        ae_level = AE_LABELS[ae_category]
+        ae_pct   = max(0, min(ae_percent, 100))
 
-        self.after(100, self.poll_results)
+        self._baseline_buf.append(ae_pct)
+        baseline = int(sum(self._baseline_buf) / len(self._baseline_buf))
+        self._recent.appendleft(ae_level)
 
-    def remove_all(self):
-        for widget in self.rf_widgets:
-            widget.place_forget()
+        self.risk_row.set_level(rf_level)
 
-        for widget in self.ae_widgets:
-            widget.place_forget()
+        ae_color = AE_LEVEL_COLORS[ae_level]
+        self.ae_pct_label.configure(text=f"{ae_pct}%", text_color=ae_color)
+        self.ae_level_label.configure(text=f"· {ae_level.upper()}", text_color=ae_color)
 
-        for widget in self.text_widgets:
-            widget.place_forget()
+        if len(self._baseline_buf) >= 5:
+            delta = ae_pct - baseline
+            sign  = "+" if delta >= 0 else ""
+            self.ae_baseline_label.configure(
+                text=f"baseline {baseline}%   ({sign}{delta}% from avg)",
+                text_color=TEXT_DIM
+            )
+        else:
+            self.ae_baseline_label.configure(
+                text=f"building baseline  {len(self._baseline_buf)}/{BASELINE_WINDOW}",
+                text_color=TEXT_DIM
+            )
 
-        self.start_anomaly_bar.place_forget()
-        self.anomaly_bar.place_forget()
+        self.after(10, lambda: self._resize_bar(ae_pct, ae_color))
+        self._refresh_dots()
 
-    def place_rf(self, widget, level):
-        x, y = self.rf_coordinates[level]
-        widget.place(x=x, y=y)
+        self.stat_flows.configure(text=str(self.flow_count))
+        self.stat_time.configure(text=datetime.now().strftime("%H:%M:%S"))
+        self.stat_rf.configure(text=rf_level.upper(),
+                               text_color=LEVEL_COLORS[rf_level]["fg"])
+        self.stat_ae.configure(text=ae_level.upper(), text_color=ae_color)
+        self.stat_baseline.configure(
+            text=f"{baseline}%" if len(self._baseline_buf) >= 5 else "—"
+        )
 
-    def display_ae(self, guess, score):
-        width = max(1, int(680 * (score / 100)))
+    def _refresh_dots(self):
+        for i, sq in enumerate(self._dot_widgets):
+            if i < len(self._recent):
+                color = AE_LEVEL_COLORS[self._recent[i]]
+                sq.configure(fg_color=color, border_color=color)
+            else:
+                sq.configure(fg_color=SURFACE2, border_color=BORDER)
 
-        score = list(str(score))
-        n = min(len(score), 3)
-        for i in range(n):
-            score[i] = int(score[i])
+    def _resize_bar(self, pct: int, color: str):
+        track_w = self._track.winfo_width()
+        if track_w < 2:
+            return
+        bar_w = max(4, int(track_w * pct / 100))
+        self.ae_bar.configure(fg_color=color, width=bar_w)
 
-        def place_digit(digit, pos):
-            x, y = self.digit_coordinates[pos]
-            self.ae_widgets[digit+pos*10].place(x=x, y=y)
 
-        for i in range(n):
-            place_digit(score[i], i)
-
-        text_x, text_y = self.text_coordinates[n-1]
-        self.text_widgets[guess].place(x=text_x, y=text_y)
-
-        self.start_anomaly_bar.place(x=65, y=345)
-
-        self.anomaly_bar = ctk.CTkImage(light_image=Image.open(BASE_DIR/'resources'/'anomaly_bar.png'), dark_image=Image.open(BASE_DIR/'resources'/'anomaly_bar.png'), size=(width, 30))
-        self.anomaly_bar = ctk.CTkLabel(self.bg_label, image=self.anomaly_bar, text="", bg_color='#483941')
-        self.anomaly_bar.place(x=85, y=345)
-
-def dashboard_process(results_queue):
-    app_instance = App(results_queue)
-    app_instance.mainloop()
-
+def dashboard_process(results_queue, stop_event=None, models_ready=None):
+    app = App(results_queue, stop_event=stop_event, models_ready=models_ready)
+    app.mainloop()
