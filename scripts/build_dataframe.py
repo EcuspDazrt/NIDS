@@ -30,8 +30,7 @@ def drop(df, handle_benign):
     if handle_benign == 'KEEP':
         df = df[df['Label'] == 'BENIGN']
         df = df.drop('Label', axis=1)
-    return df.drop(columns=['Flow ID', 'Source IP', 'Source Port',
-                            'Timestamp', 'Total Length of Fwd Packets', 'Total Length of Bwd Packets',
+    return df.drop(columns=['Total Length of Fwd Packets', 'Total Length of Bwd Packets',
                             'Flow Bytes/s', 'Flow Packets/s', 'Flow IAT Mean', 'Flow IAT Max',
                             'Flow IAT Min', 'Fwd PSH Flags',
                             'Bwd PSH Flags', 'Fwd URG Flags', 'Bwd URG Flags',
@@ -48,6 +47,9 @@ def drop(df, handle_benign):
                             'Init_Win_bytes_forward', 'Init_Win_bytes_backward',
                             'act_data_pkt_fwd', 'min_seg_size_forward',
                             'Fwd IAT Mean', 'Bwd IAT Mean'])
+
+    # Not in kaggle dataset:
+    # 'Flow ID', 'Source IP', 'Source Port', 'Timestamp',
 
     # Data that remains:
 
@@ -72,7 +74,7 @@ def create_dataframe(paths, label, handle_benign=None):
     for path in paths:
         df = pd.concat([df, drop(pd.read_csv(path, encoding='latin1', low_memory=False), handle_benign=handle_benign)], ignore_index=True)
 
-    df.to_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated'/'CICIDS2017_{label}.csv', index=False)
+    df.to_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated'/f'CICIDS2017_{label}.csv', index=False)
 
 def init_dataframes():
     create_dataframe(paths_testing, 'ae_testing_benign', handle_benign='KEEP')
@@ -81,10 +83,5 @@ def init_dataframes():
     create_dataframe(paths_training, 'ae_training', handle_benign='KEEP')
     create_dataframe(paths_training, 'rf_training')
 
-# df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated'/'CICIDS2017_total_flow.csv', encoding='latin1', low_memory=False)
-# df.columns = df.columns.str.strip()
-# labels = df['Label']
-#
-# print(df.info)
-# print(df.describe())
-# print(labels.value_counts())
+if __name__ == '__main__':
+    init_dataframes()

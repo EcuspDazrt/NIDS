@@ -6,30 +6,40 @@ BASE_DIR = Path(__file__).parent
 
 # model structure
 class AutoEncoder(nn.Module):
-    def __init__(self, n_features):
+    def __init__(self, n_features, dropout=0.1):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Linear(n_features, 64),
+            nn.Linear(n_features, 16),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Linear(64, 32),
+            nn.Dropout(dropout),
+            nn.Linear(16, 8),
+            nn.BatchNorm1d(8),
             nn.ReLU(),
-            nn.Linear(32, 16)
+            nn.Dropout(dropout),
+            nn.Linear(8, 4)
         )
         self.decoder = nn.Sequential(
-            nn.Linear(16, 32),
+            nn.Linear(4, 8),
             nn.ReLU(),
-            nn.Linear(32, 64),
+            nn.Linear(8, 16),
             nn.ReLU(),
-            nn.Linear(64, n_features)
+            nn.Linear(16, n_features)
         )
     def forward(self, x):
         z = self.encoder(x)
         return self.decoder(z)
 
-# meant to be used FROM other files. Do not run from this local file; it will not find the artifact
-def construct_model(load=True):
+def construct_model(load=False):
     n_features = 20
     model = AutoEncoder(n_features=n_features)
     if load:
-        model.load_state_dict(torch.load(BASE_DIR.parent/'artifacts'/'ae_model.pt'))
+        if not Path(BASE_DIR.parent/'artifacts').exists():
+            Path(BASE_DIR.parent/'artifacts').mkdir()
+
+        if not Path(BASE_DIR.parent /'artifacts'/'ae_model.pt').exists():
+            from training.ae_train import train_model
+            train_model()
+
+        model.load_state_dict(torch.load(BASE_DIR.parent / 'artifacts' / 'ae_model.pt'))
     return model

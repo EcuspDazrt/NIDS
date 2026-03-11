@@ -1,9 +1,9 @@
 import numpy as np
 
 def extract_features_ae(flow):
-    fwd = flow['fwd packets']
-    bwd = flow['bwd packets']
-    duration = flow['last_seen'] - flow['start_time'].clip(lower=0)
+    fwd = flow['fwd_packets']
+    bwd = flow['bwd_packets']
+    duration = flow['last_seen'] - flow['start_time']
 
     fwd_bytes = flow['fwd_bytes']
     bwd_bytes = flow['bwd_bytes']
@@ -38,7 +38,7 @@ def extract_features_ae(flow):
     return features
 
 def extract_features_rf(flow):
-    from extract_training import port_category, is_private
+    from features.extract_training import port_category, is_private
 
     fwd = flow['fwd_packets']
     bwd = flow['bwd_packets']
@@ -48,7 +48,7 @@ def extract_features_rf(flow):
     ack = flow['ack_count']
     fin = flow['fin_count']
     rst = flow['rst_count']
-    duration = (flow['last_seen'] - flow['start_time']).clip(lower=0)
+    duration = (flow['last_seen'] - flow['start_time'])
     protocol = flow['protocol']
 
     features = {
@@ -57,7 +57,7 @@ def extract_features_rf(flow):
         'proto_17': 1 if protocol == 17 else 0,
 
         'Port': port_category(flow['dst_port']),
-        'IP': is_private(flow['dst_ip']),
+        # 'IP': is_private(flow['dst_ip']),
         'Duration': duration,
         'In/Out Ratio': fwd / (bwd + 1e-6),
 
@@ -105,7 +105,7 @@ def extract_features_rf(flow):
         'Forward IAT Std': flow['fwd_iat_stats'].std,
         'Forward IAT Variance': flow['fwd_iat_stats'].variance,
 
-        'Backward IAT': flow['bwd_iat_stats'].mean * fwd if fwd != 0 else 0.0,
+        'Backward IAT': flow['bwd_iat_stats'].mean * bwd if bwd != 0 else 0.0,
         'Backward IAT Max': flow['bwd_iat_stats'].max,
         'Backward IAT Min': flow['bwd_iat_stats'].min,
         'Backward IAT Mean': flow['bwd_iat_stats'].mean,

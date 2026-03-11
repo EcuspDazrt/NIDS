@@ -1,4 +1,5 @@
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import RobustScaler
 import pandas as pd
 import joblib as jb
 
@@ -18,7 +19,13 @@ def create_model():
     x_train = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_training.csv', low_memory=False)
     y_train = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_labels_training.csv', low_memory=False)['Label'].values
 
-    rf.fit(x_train, y_train)
+    scaler = RobustScaler()
+    x_scaled = scaler.fit_transform(x_train)
+    jb.dump(scaler, BASE_DIR.parent/'models'/'artifacts'/'rf_scaler.pkl')
+
+    print('fitting rf model...')
+    rf.fit(x_scaled, y_train)
     jb.dump(rf, BASE_DIR.parent/'models'/'artifacts'/'rf_model.pkl')
 
-create_model()
+if __name__ == '__main__':
+    create_model()

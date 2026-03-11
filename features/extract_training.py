@@ -13,6 +13,20 @@ def is_private(ip_series):
     ).astype(int)
 
 def port_category(port_series):
+    import pandas as pd
+    import numpy as np
+
+    # Handle scalar input during inference
+    if np.isscalar(port_series):
+        port = port_series if port_series is not None else 0
+        if port <= 1023:
+            return 0
+        elif port <= 49151:
+            return 1
+        else:
+            return 2
+
+    # Original Series path for training
     return pd.cut(
         port_series.fillna(0),
         bins=[-1, 1023, 49151, float('inf')],
@@ -22,8 +36,8 @@ def port_category(port_series):
 def extract_features_rf(df, label="", save_type=None):
     df.columns = df.columns.str.strip()
 
-    df = df.dropna(how='all')  # drop rows where every column is null
-    df = df.dropna(subset=['Destination Port', 'Flow Duration', 'Protocol'])  # drop rows missing critical fields
+    # df = df.dropna(how='all')  # drop rows where every column is null
+    # df = df.dropna(subset=['Destination Port', 'Flow Duration', 'Protocol'])  # drop rows missing critical fields
 
     null_counts = df.isnull().sum()
     if null_counts.any():
@@ -40,13 +54,17 @@ def extract_features_rf(df, label="", save_type=None):
     duration = df['Flow Duration']
 
     all_protocols = [0, 6, 17]
+    if 'Protocol' not in df.columns:
+        flag_cols = ['SYN Flag Count', 'ACK Flag Count', 'FIN Flag Count', 'RST Flag Count']
+        df['Protocol'] = np.where(df[flag_cols].any(axis=1), 6, 17)
+
     df['Protocol'] = pd.to_numeric(df['Protocol'], errors='coerce').fillna(0).astype(int)
     df['Protocol'] = pd.Categorical(df['Protocol'], categories=all_protocols)
     proto_onehot = pd.get_dummies(df['Protocol'], prefix='proto', dtype=int)
     features = pd.concat([features, proto_onehot], axis=1)
 
     features['Port'] = port_category(df['Destination Port'])
-    features['IP'] = is_private(df['Destination IP'])
+    # features['IP'] = is_private(df['Destination IP'])
     features['Duration'] = duration / 1_000_000
     features['In/Out Ratio'] = fwd / (bwd + 1e-6)
 
@@ -81,35 +99,35 @@ def extract_features_rf(df, label="", save_type=None):
     features['Backward Byte Variance'] = (((features['Backward Byte Max'] - features['Backward Byte Mean']) ** 2) + ((features['Backward Byte Mean'] - features['Backward Byte Min']) ** 2)) / 2
 
 
-    features['Total IAT'] = df['Fwd IAT Total'] + df['Bwd IAT Total']
-    features['Total IAT Max'] = df[['Fwd IAT Max', 'Bwd IAT Max']].max(axis=1)
-    features['Total IAT Min'] = df[['Fwd IAT Min', 'Bwd IAT Min']].min(axis=1)
-    features['Total IAT Mean'] = (df['Fwd IAT Total'] + df['Bwd IAT Total']) / (fwd + bwd + 1e-6)
-    features['Total IAT Std'] = df['Flow IAT Std']
-    features['Total IAT Variance'] = (((features['Total IAT Max'] - features['Total IAT Mean']) ** 2) + ((features['Total IAT Mean'] - features['Total IAT Min']) ** 2)) / 2
-    features['Forward IAT'] = df['Fwd IAT Total']
-    features['Forward IAT Max'] = df['Fwd IAT Max']
-    features['Forward IAT Min'] = df['Fwd IAT Min']
-    features['Forward IAT Mean'] = df['Fwd IAT Total'] / (fwd + 1e-6)
-    features['Forward IAT Std'] = df['Fwd IAT Std']
-    features['Forward IAT Variance'] = (((features['Forward IAT Max'] - features['Forward IAT Mean']) ** 2) + ((features['Forward IAT Mean'] - features['Forward IAT Min']) ** 2)) / 2
-    features['Backward IAT'] = df['Bwd IAT Total']
-    features['Backward IAT Max'] = df['Bwd IAT Max']
-    features['Backward IAT Min'] = df['Bwd IAT Min']
-    features['Backward IAT Mean'] = df['Bwd IAT Total'] / (bwd + 1e-6)
-    features['Backward IAT Std'] = df['Bwd IAT Std']
-    features['Backward IAT Variance'] = (((features['Backward IAT Max'] - features['Backward IAT Mean']) ** 2) + ((features['Backward IAT Mean'] - features['Backward IAT Min']) ** 2)) / 2
+    features['Total IAT'] = (df['Fwd IAT Total'] + df['Bwd IAT Total']) / 1_000_000
+    features['Total IAT Max'] = (df[['Fwd IAT Max', 'Bwd IAT Max']].max(axis=1)) / 1_000_000
+    features['Total IAT Min'] = (df[['Fwd IAT Min', 'Bwd IAT Min']].min(axis=1)) / 1_000_000
+    features['Total IAT Mean'] = ((df['Fwd IAT Total'] + df['Bwd IAT Total']) / (fwd + bwd + 1e-6)) / 1_000_000
+    features['Total IAT Std'] = (df['Flow IAT Std']) / 1_000_000
+    features['Total IAT Variance'] = ((((features['Total IAT Max'] - features['Total IAT Mean']) ** 2) + ((features['Total IAT Mean'] - features['Total IAT Min']) ** 2)) / 2) / 1_000_000
+    features['Forward IAT'] = (df['Fwd IAT Total']) / 1_000_000
+    features['Forward IAT Max'] = (df['Fwd IAT Max']) / 1_000_000
+    features['Forward IAT Min'] = (df['Fwd IAT Min']) / 1_000_000
+    features['Forward IAT Mean'] = (df['Fwd IAT Total'] / (fwd + 1e-6)) / 1_000_000
+    features['Forward IAT Std'] = (df['Fwd IAT Std']) / 1_000_000
+    features['Forward IAT Variance'] = ((((features['Forward IAT Max'] - features['Forward IAT Mean']) ** 2) + ((features['Forward IAT Mean'] - features['Forward IAT Min']) ** 2)) / 2) / 1_000_000
+    features['Backward IAT'] = (df['Bwd IAT Total']) / 1_000_000
+    features['Backward IAT Max'] = (df['Bwd IAT Max']) / 1_000_000
+    features['Backward IAT Min'] = (df['Bwd IAT Min']) / 1_000_000
+    features['Backward IAT Mean'] = (df['Bwd IAT Total'] / (bwd + 1e-6)) / 1_000_000
+    features['Backward IAT Std'] = (df['Bwd IAT Std']) / 1_000_000
+    features['Backward IAT Variance'] = ((((features['Backward IAT Max'] - features['Backward IAT Mean']) ** 2) + ((features['Backward IAT Mean'] - features['Backward IAT Min']) ** 2)) / 2) / 1_000_000
 
-    features['Active Max'] = df['Active Max']
-    features['Active Min'] = df['Active Min']
-    features['Active Mean'] = df['Active Mean']
-    features['Active Std'] = df['Active Std']
-    features['Active Variance'] = (((features['Active Max'] - features['Active Mean']) ** 2) + ((features['Active Mean'] - features['Active Min']) ** 2)) / 2
-    features['Idle Max'] = df['Idle Max']
-    features['Idle Min'] = df['Idle Min']
-    features['Idle Mean'] = df['Idle Mean']
-    features['Idle Std'] = df['Idle Std']
-    features['Idle Variance'] = (((features['Idle Max'] - features['Idle Mean']) ** 2) + ((features['Idle Mean'] - features['Idle Min']) ** 2)) / 2
+    features['Active Max'] = (df['Active Max']) / 1_000_000
+    features['Active Min'] = (df['Active Min']) / 1_000_000
+    features['Active Mean'] = (df['Active Mean']) / 1_000_000
+    features['Active Std'] = (df['Active Std']) / 1_000_000
+    features['Active Variance'] = ((((features['Active Max'] - features['Active Mean']) ** 2) + ((features['Active Mean'] - features['Active Min']) ** 2)) / 2) / 1_000_000
+    features['Idle Max'] = (df['Idle Max']) / 1_000_000
+    features['Idle Min'] = (df['Idle Min']) / 1_000_000
+    features['Idle Mean'] = (df['Idle Mean']) / 1_000_000
+    features['Idle Std'] = (df['Idle Std']) / 1_000_000
+    features['Idle Variance'] = ((((features['Idle Max'] - features['Idle Mean']) ** 2) + ((features['Idle Mean'] - features['Idle Min']) ** 2)) / 2) / 1_000_000
 
     features['Syn Ratio'] = syn / (fwd + bwd + 1e-6)
     features['Ack Ratio'] = ack / (fwd + bwd + 1e-6)
@@ -122,7 +140,6 @@ def extract_features_rf(df, label="", save_type=None):
     features['Syn/Ack Ratio'] = syn / (ack + 1e-6)
     features['Fin/Ack Ratio'] = fin / (ack + 1e-6)
     features['Rst/Syn Ratio'] = rst / (syn + 1e-6)
-    # features['Failed Connection'] = 1 if ((features['proto_'] == 6) and (syn > 0) and (ack == 0)) else 0
 
     features = features.replace([np.inf, -np.inf], np.nan)
     features = features.fillna(0)
@@ -132,9 +149,9 @@ def extract_features_rf(df, label="", save_type=None):
     if save_type == 'export':
         if 'Label' in df.columns:
             labels = (df['Label'] != 'BENIGN').astype(int)
-            labels.to_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_labels_{label}.csv', index=False)
+            labels.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_labels_{label}.csv', index=False)
 
-        features.to_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_{label}.csv', index=False)
+        features.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_{label}.csv', index=False)
         return None
 
     return features
@@ -143,8 +160,8 @@ def extract_features_rf(df, label="", save_type=None):
 def extract_features_ae(df, label="", save_type=None):
     df.columns = df.columns.str.strip()
 
-    df = df.dropna(how='all')  # drop rows where every column is null
-    df = df.dropna(subset=['Destination Port', 'Flow Duration', 'Protocol'])  # drop rows missing critical fields
+    # df = df.dropna(how='all')  # drop rows where every column is null
+    # df = df.dropna(subset=['Destination Port', 'Flow Duration', 'Protocol'])  # drop rows missing critical fields
 
     null_counts = df.isnull().sum()
     if null_counts.any():
@@ -171,15 +188,15 @@ def extract_features_ae(df, label="", save_type=None):
     features['Backward Byte Mean'] = np.log1p(df['Bwd Packet Length Mean'])
     features['Backward Byte Std'] = np.log1p(df['Bwd Packet Length Std'])
 
-    features['Forward IAT Mean'] = np.log1p(df['Fwd IAT Total'] / (fwd + 1e-6))
-    features['Forward IAT Std'] = np.log1p(df['Fwd IAT Std'])
-    features['Backward IAT Mean'] = np.log1p(df['Bwd IAT Total'] / (bwd + 1e-6))
-    features['Backward IAT Std'] = np.log1p(df['Bwd IAT Std'])
+    features['Forward IAT Mean'] = np.log1p((df['Fwd IAT Total'] / (fwd + 1e-6)) / 1_000_000)
+    features['Forward IAT Std'] = np.log1p((df['Fwd IAT Std']) / 1_000_000)
+    features['Backward IAT Mean'] = np.log1p((df['Bwd IAT Total'] / (bwd + 1e-6)) / 1_000_000)
+    features['Backward IAT Std'] = np.log1p((df['Bwd IAT Std']) / 1_000_000)
 
-    features['Active Mean'] = np.log1p(df['Active Mean'])
-    features['Active Std'] = np.log1p(df['Active Std'])
-    features['Idle Mean'] = np.log1p(df['Idle Mean'])
-    features['Idle Std'] = np.log1p(df['Idle Std'])
+    features['Active Mean'] = np.log1p((df['Active Mean']) / 1_000_000)
+    features['Active Std'] = np.log1p((df['Active Std']) / 1_000_000)
+    features['Idle Mean'] = np.log1p((df['Idle Mean']) / 1_000_000)
+    features['Idle Std'] = np.log1p((df['Idle Std']) / 1_000_000)
     # features['Failed Connection'] = 1 if ((features['proto_'] == 6) and (syn > 0) and (ack == 0)) else 0
 
     features = features.replace([np.inf, -np.inf], np.nan)
@@ -188,7 +205,7 @@ def extract_features_ae(df, label="", save_type=None):
     features = features.astype(np.float32)
 
     if save_type == 'export':
-        features.to_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_{label}.csv', index=False)
+        features.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'ae_{label}.csv', index=False)
         return None
 
     return features
@@ -208,3 +225,6 @@ def process_raw_dataset():
 
     df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated/CICIDS2017_rf_testing.csv', low_memory=False)
     extract_features_rf(df, 'testing', save_type='export')
+
+if __name__ == '__main__':
+    process_raw_dataset()

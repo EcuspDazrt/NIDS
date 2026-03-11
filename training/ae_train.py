@@ -10,6 +10,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 
 def train_model():
+    print('training auto-encoder...')
     # initialize training variables
     batch_size = 2048
     epochs = 100
@@ -24,6 +25,7 @@ def train_model():
     optimizer = optim.Adam(model.parameters(), lr=1e-5)
 
     for epoch in range(epochs):
+        model.train()
         total_loss = 0.0
         num_batches = 0
         for batch in x_train:
@@ -39,6 +41,8 @@ def train_model():
             num_batches += 1
 
         print(f'Epochs: {epoch + 1} / {epochs}, Loss: {total_loss / num_batches}')
-        torch.save(model.state_dict(), BASE_DIR.parent/'models'/'artifacts'/'ae_model.pt')
 
-train_model()
+    torch.save(model.state_dict(), BASE_DIR.parent / 'models' / 'artifacts' / 'ae_model.pt')
+
+if __name__ == '__main__':
+    train_model()

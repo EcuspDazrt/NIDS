@@ -1,54 +1,46 @@
 import torch
+import json
 import pandas as pd
+from sklearn.metrics import classification_report
 
 from scripts.build_dataset import create_dataset
 from models.definitions.autoencoder import construct_model
+from inference.inference import categorize_risk
 
 from pathlib import Path
 BASE_DIR = Path(__file__).parent
 
-def evaluate_model(show_error_flag=True):
-    model = construct_model()
-    model.eval()
+def evaluate_model():
+    model = construct_model(load=True)
 
-    THRESHOLD = 0.0789558
-    # 0.113147736
+    if not Path(BASE_DIR.parent/'models'/'artifacts'/'thresholds.json').exists():
+        from scripts.calibrate_thresholds import calibrate_thresholds
+        calibrate_thresholds()
 
-    def show_error(X, label, expected: int):
-        with torch.no_grad():
-            recon = model(X)
-            error = ((X - recon) ** 2).mean(dim=1)
-
-            guesses = error > THRESHOLD
-            correct, wrong = 0, 0
-            for guess in guesses:
-                if guess == expected:
-                    correct += 1
-                    continue
-                wrong += 1
-
-            out = error.mean().item()
-            print(f'{label}: {round(out * 100, 1)}% total reconstruction error, expected {100 if expected else 0}%')
-            return correct, wrong
+    with open(BASE_DIR.parent/'models'/'artifacts'/'thresholds.json') as f:
+        t = json.load(f)
+    thresholds = t['ae']
+    binary_threshold = thresholds[0]
 
     features_benign = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_benign.csv', low_memory=False)
-    X_benign = create_dataset(features_benign, loader=False)
+    features_malicious = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_malicious.csv', low_memory=False)
+    features = pd.concat([features_benign, features_malicious], ignore_index=True)
+    x = create_dataset(features, loader=False)
 
-    recon = model(X_benign)
-    error = ((X_benign - recon) ** 2).mean(dim=1)
-    print("Validation error stats:",
-          error.min(),
-          error.mean(),
-          error.max())
+    with torch.no_grad():
+        recon = model(x)
+        error = ((x - recon) ** 2).mean(dim=1)
 
-    if show_error_flag:
-        features_malicious = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_malicious.csv', low_memory=False)
-        X_malicious = create_dataset(features_malicious, loader=False)
+    y_true = pd.DataFrame({'label': [0] * len(features_benign) + [1] * len(features_malicious)})
+    binary_predictions = (error > binary_threshold).int()
+    print(classification_report(y_true, binary_predictions))
 
-        true_pos, false_neg = show_error(X_malicious, 'Malicious', True)
-        true_neg, false_pos = show_error(X_benign, 'Benign', False)
+    categories = categorize_risk(error, thresholds)
+    for i, label in enumerate(['normal', 'elevated', 'suspicious', 'severe']):
+        mask = categories == i
+        if mask.sum() > 0:
+            actual_attack_rate = y_true[mask].mean()
+            print(f'{label}: {mask.sum()} flows, {actual_attack_rate:.1%} actually malicious')
 
-        print(f'\nRecall: {round((true_pos / (true_pos + false_neg)) * 100, 2)}%, Precision: {round((true_pos / (true_pos + false_pos)) * 100, 2)}%')
-        return None
-
-    return error
+if __name__ == '__main__':
+    evaluate_model()

@@ -1,8 +1,14 @@
 import joblib as jb
 from pathlib import Path
+BASE_DIR = Path(__file__).parent
 
-# meant to be used FROM other files. Do not run from this local file; it will not find the artifact
 def construct_model():
-    BASE_DIR = Path(__file__).resolve().parent.parent
-    rf = jb.load(BASE_DIR.parent/'models'/'artifacts'/'rf_model.pkl')
+    if not Path(BASE_DIR.parent / 'artifacts').exists():
+        Path(BASE_DIR.parent / 'artifacts').mkdir()
+
+    if not Path(BASE_DIR.parent/'artifacts'/'rf_model.pkl').exists():
+        from training.rf_train import create_model
+        create_model()
+
+    rf = jb.load(BASE_DIR.parent/'artifacts'/'rf_model.pkl')
     return rf
