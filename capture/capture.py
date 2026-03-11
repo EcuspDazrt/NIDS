@@ -1,6 +1,7 @@
 import ctypes
 import ctypes.util
 import sys
+import time
 
 IPV6_EXT_HEADERS = {
             0,  # Hop-by-Hop Options
@@ -9,6 +10,8 @@ IPV6_EXT_HEADERS = {
             51,  # Authentication Header
             60,  # Destination Options
         }
+ACTIVITY_THRESHOLD = 1.0  # seconds
+TIMEOUT_THRESHOLD = 60.0  # seconds
 
 TCP_PROTOCOL = 6
 UDP_PROTOCOL = 17
@@ -16,7 +19,7 @@ UDP_PROTOCOL = 17
 ETHERTYPE_IPV4 = 0x0800
 ETHERTYPE_IPV6 = 0x86DD
 
-network_interface = b'eth0'
+network_interface = b'\\Device\\NPF_{9B0E2F16-226F-4133-B721-BD5C64A54D44}' if sys.platform == 'win32' else b'eth0' if sys.platform == 'linux' else None
 snap_len = 256
 promiscuous = 1
 read_timeout = 1000
@@ -31,8 +34,8 @@ class PcapPacketHeader(ctypes.Structure):
 
 class RunningStats:
     def __init__(self):
-        self.minimum = None
-        self.maximum = None
+        self.minimum = float('inf')
+        self.maximum = float('-inf')
         self.n = 0
         self.mean = 0.0
         self.M2 = 0.0  # sum of squared deviations
@@ -43,16 +46,8 @@ class RunningStats:
         self.mean += delta / self.n
         delta2 = value - self.mean
         self.M2 += delta * delta2
-
-        if self.minimum is None:
-            self.minimum = value
-        else:
-            self.minimum = min(self.minimum, value)
-
-        if self.maximum is None:
-            self.maximum = value
-        else:
-            self.maximum = max(self.maximum, value)
+        self.minimum = min(self.minimum, value)
+        self.maximum = max(self.maximum, value)
 
     @property
     def variance(self):
@@ -66,11 +61,11 @@ class RunningStats:
 
     @property
     def max(self):
-        return self.maximum
+        return self.maximum if self.n > 0 else 0.0
 
     @property
     def min(self):
-        return self.minimum
+        return self.minimum if self.n > 0 else 0.0
 
 
 def parse_ipv4(ipv4_bytes):
@@ -162,38 +157,54 @@ def get_flow(flow_id, flow_state):
 
     return flow_state[flow_id]
 
-def make_flow_key(flow_id):
-    epoch, src_ip, dst_ip, src_port, dst_port, proto = flow_id
+def make_canonical(flow_id):
+    src_ip, dst_ip, src_port, dst_port, proto = flow_id
 
     if (src_ip, src_port) < (dst_ip, dst_port):
-        return epoch, src_ip, dst_ip, src_port, dst_port, proto
+        return src_ip, dst_ip, src_port, dst_port, proto
 
-    return epoch, dst_ip, src_ip, dst_port, src_port, proto
+    return dst_ip, src_ip, dst_port, src_port, proto
 
-def capture_process(queue, interface_type=None): # other type is live-capture
-    flow_state = {}  # 6 tuple: flow dicts (flow_key: state)
+def capture_process(queue, stop_capture, interface_type): # other type is live-capture
+    flow_state = {}  # 6 tuple - flow dicts (flow_key: state)
+    epoch_counters = {} # (traditional 5 tuple: epoch id)
 
     if sys.platform == 'win32':
         libpcap = ctypes.CDLL(r'C:\Windows\System32\Npcap\wpcap.dll')
+        libpcap.pcap_open_offline.restype = ctypes.c_void_p
+        libpcap.pcap_open_live.restype = ctypes.c_void_p
+        libpcap.pcap_next_ex.restype = ctypes.c_int
+    elif sys.platform == 'linux':
+        libpcap = ctypes.CDLL('libpcap.so')
     else:
         libpcap = ctypes.CDLL(ctypes.util.find_library('pcap'))
 
     error_buffer = ctypes.create_string_buffer(256)
+    libpcap.pcap_next_ex.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.POINTER(PcapPacketHeader)),
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte))
+    ]
+    libpcap.pcap_next_ex.restype = ctypes.c_int
 
     if interface_type == 'simulation':
-        handle = libpcap.pcap_open_offline(b'datasets/raw/pcaps/FIRST-2015_Hands-on-Network_Forensics_PCAP/2015-03-05/snort.log.1425565276', error_buffer)
+        handle = libpcap.pcap_open_offline(b'C:/Users/London/Documents/GitHub/NIDS/datasets/raw/pcaps/FIRST-2015_Hands-on_Network_Forensics_PCAP/2015-03-05/snort.log.1425565276', error_buffer)
     elif interface_type == 'live-capture':
-        handle = libpcap.pcap_open_live(network_interface, snap_len, promiscuous, error_buffer)
+        handle = libpcap.pcap_open_live(network_interface, snap_len, promiscuous, read_timeout, error_buffer)
     else:
         return
 
     if not handle:
-        print(f'Error: {error_buffer.value.decode()}')
+        raise RuntimeError(f'Failed to open pcap: {error_buffer.value.decode()}')
+    handle = ctypes.c_void_p(handle)
 
     header = ctypes.POINTER(PcapPacketHeader)()
     data = ctypes.POINTER(ctypes.c_ubyte)()
 
     while True:
+        if stop_capture and stop_capture.is_set():
+            time.sleep(0.1)
+            continue
         result = libpcap.pcap_next_ex(
             handle,
             ctypes.byref(header),
@@ -203,8 +214,8 @@ def capture_process(queue, interface_type=None): # other type is live-capture
             break
 
         raw_bytes = bytes(data[:header[0].capture_len])
-
         ethertype = int.from_bytes(raw_bytes[12:14], byteorder='big')
+
         if ethertype != ETHERTYPE_IPV4 and ethertype != ETHERTYPE_IPV6:
             continue
 
@@ -221,6 +232,9 @@ def capture_process(queue, interface_type=None): # other type is live-capture
                 continue
             source_ip, destination_ip, source_port, destination_port, protocol, transport_start = result
 
+        if protocol != TCP_PROTOCOL and protocol != UDP_PROTOCOL:
+            continue
+
         if protocol == TCP_PROTOCOL:
             flags = raw_bytes[transport_start + 13]
             fin = (flags & 0x01) != 0
@@ -233,30 +247,26 @@ def capture_process(queue, interface_type=None): # other type is live-capture
             rst = 0
             ack = 0
 
-        epoch_id = 0
-        ACTIVITY_THRESHOLD = 1.0 # seconds
-        TIMEOUT_THRESHOLD = 60.0 # seconds
+        flow_id = (source_ip, destination_ip, source_port, destination_port, protocol)
+        canonical = make_canonical(flow_id)
+        epoch_id = epoch_counters.get(canonical, 0)
 
-        # increment epoch flow id until it hits a flow that is not timed out
-        flow_id = epoch_id, source_ip, destination_ip, source_port, destination_port, protocol
-        flow_key = make_flow_key(flow_id)
+        flow_key = (epoch_id,) + canonical
         flow = get_flow(flow_key, flow_state)
 
         current_timestamp = header[0].tv_sec + header[0].tv_usec / 1e6
         last_seen = flow['last_seen']
 
         while last_seen is not None and current_timestamp - last_seen >= TIMEOUT_THRESHOLD:
-            flow_id = (epoch_id, source_ip, destination_ip, source_port, destination_port, protocol)
-            flow_key = make_flow_key(flow_id)
+            if flow['fwd_packets'] + flow['bwd_packets'] > 0:
+                queue.put(flow)
+            del flow_state[flow_key]
+
+            epoch_id += 1
+            epoch_counters[canonical] = epoch_id
+            flow_key = (epoch_id,) + canonical
             flow = get_flow(flow_key, flow_state)
             last_seen = flow['last_seen']
-            epoch_id += 1
-
-        # get the first flow that is not timed-out
-        flow_id = (epoch_id, source_ip, destination_ip, source_port, destination_port, protocol)
-        flow_key = make_flow_key(flow_id)
-        flow = get_flow(flow_key, flow_state)
-        last_seen = flow['last_seen']
 
         if flow['src_ip'] is None and flow['dst_ip'] is None and flow['src_port'] is None and flow['dst_port'] is None and flow['protocol'] is None:
             flow['src_ip'] = source_ip
@@ -295,8 +305,7 @@ def capture_process(queue, interface_type=None): # other type is live-capture
             flow['start_time'] = current_timestamp
         flow['last_seen'] = current_timestamp
 
-        queue.put(flow)
-
-# from multiprocessing import Process, Queue
-# queue = Queue()
-# capture_process(queue, interface_type='simulation')
+        if rst or fin:
+            queue.put(flow)
+            del flow_state[flow_key]
+            epoch_counters[canonical] = epoch_id + 1
