@@ -32,7 +32,7 @@ RF_DISPLAY = ["Safe", "Potential", "Likely", "Danger"]
 AE_LABELS  = ["normal", "elevated", "suspicious", "severe"]
 
 BASELINE_WINDOW = 20
-FONT = "Consolas"   # sharp monospace on Windows, falls back on other OS
+FONT = "Consolas"
 
 
 class SectionCard(ctk.CTkFrame):
@@ -73,9 +73,8 @@ class App(ctk.CTk):
     def __init__(self, results_queue, stop_event=None, models_ready=None):
         super().__init__()
         self.results_queue = results_queue
-        self.stop_event    = stop_event   # multiprocessing.Event — optional
+        self.stop_event    = stop_event
         self.models_ready  = models_ready
-        self.is_running    = False
         self.is_paused     = False
         self.flow_count    = 0
         self._baseline_buf = deque(maxlen=BASELINE_WINDOW)
@@ -87,7 +86,11 @@ class App(ctk.CTk):
         self.configure(fg_color=BG)
         self._build_ui()
 
-        if self.models_ready:
+        # auto-start: if models already ready, go live immediately
+        # if still loading, poll until ready then go live automatically
+        if self.models_ready and self.models_ready.is_set():
+            self._start_live()
+        elif self.models_ready:
             self._poll_ready()
 
     def _build_ui(self):
@@ -204,22 +207,13 @@ class App(ctk.CTk):
         stat(4, "Baseline", "stat_baseline")
         g.grid_columnconfigure(1, weight=1)
 
-        # Control buttons
+        # only a pause button — no start button needed
         btn_card = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=8,
                                 border_width=1, border_color=BORDER)
         btn_card.pack(fill="x")
 
         btn_inner = ctk.CTkFrame(btn_card, fg_color="transparent")
         btn_inner.pack(fill="x", padx=14, pady=14)
-
-        self.start_btn = ctk.CTkButton(
-            btn_inner, text="START CAPTURE",
-            font=(FONT, 13, "bold"),
-            fg_color=ACCENT, hover_color="#2563EB",
-            text_color=TEXT, corner_radius=6, height=40,
-            command=self._on_start
-        )
-        self.start_btn.pack(fill="x", pady=(0, 6))
 
         self.pause_btn = ctk.CTkButton(
             btn_inner, text="PAUSE",
@@ -232,24 +226,18 @@ class App(ctk.CTk):
         self.pause_btn.pack(fill="x")
 
     def _poll_ready(self):
+        # keep polling until models are loaded, then go live automatically
         if self.models_ready.is_set():
-            self.start_btn.configure(state='normal', text='START CAPTURE')
-            self.status_lbl.configure(text='READY')
+            self._start_live()
         else:
-            self.start_btn.configure(state='disabled', text='LOADING MODELS...', fg_color=SURFACE2, text_color=TEXT_DIM)
-            self.status_lbl.configure(text='LOADING')
+            self.status_dot.configure(text_color=TEXT_DIM)
+            self.status_lbl.configure(text="LOADING")
             self.after(200, self._poll_ready)
 
-    def _on_start(self):
-        if not self.models_ready or not self.models_ready.is_set():
-            return
-        if self.is_running:
-            return
-        self.is_running = True
-        self.is_paused  = False
-        self.start_btn.configure(state="disabled", text="CAPTURING…",
-                                 fg_color=SURFACE2, text_color=TEXT_DIM)
-        self.pause_btn.configure(state="normal", text_color=TEXT)
+    def _start_live(self):
+        # called automatically — either on open if ready, or once loading finishes
+        self.is_paused = False
+        self.pause_btn.configure(state="normal", text="PAUSE", text_color=TEXT)
         self.status_dot.configure(text_color=AE_LEVEL_COLORS["normal"])
         self.status_lbl.configure(text="LIVE", text_color=AE_LEVEL_COLORS["normal"])
         if self.stop_event:
@@ -257,10 +245,7 @@ class App(ctk.CTk):
         self.poll_results()
 
     def _on_pause(self):
-        if not self.is_running:
-            return
         if self.is_paused:
-            # Resume
             self.is_paused = False
             self.pause_btn.configure(text="PAUSE")
             self.status_dot.configure(text_color=AE_LEVEL_COLORS["normal"])
@@ -268,7 +253,6 @@ class App(ctk.CTk):
             if self.stop_event:
                 self.stop_event.clear()
         else:
-            # Pause
             self.is_paused = True
             self.pause_btn.configure(text="RESUME")
             self.status_dot.configure(text_color=TEXT_DIM)
@@ -277,16 +261,37 @@ class App(ctk.CTk):
                 self.stop_event.set()
 
     def poll_results(self):
+        wait_time = 1000
         if not self.is_paused:
             try:
                 if not self.results_queue.empty():
                     result = self.results_queue.get_nowait()
                     if result is not None:
-                        ae_percent, ae_category, rf_category = result
-                        self._update(ae_percent, ae_category, rf_category)
+                        if result['type'] == 'flow':
+                            ae_percent, ae_category, rf_category = result['payload']
+                            self._update(ae_percent, ae_category, rf_category)
+                        if result['type'] == 'alert':
+                            self.show_alert(result['payload'])
+                            wait_time = 10
             except Exception:
                 pass
-        self.after(1000, self.poll_results)
+        self.after(wait_time, self.poll_results)
+
+    def show_alert(self, alert):
+        print('Alert pinged in dashboard...')
+        alert_type = alert.get('type', '')
+        message = alert.get('message', '')
+        severity = alert.get('severity', 0)
+
+        color = {
+            1: LEVEL_COLORS['potential']['fg'],
+            2: LEVEL_COLORS['likely']['fg'],
+            3: LEVEL_COLORS['danger']['fg'],
+            4: '#FF0000'
+        }.get(severity, TEXT_DIM)
+
+        self.status_lbl.configure(text=f'ALERT: {alert_type.replace('_', ' ')}', text_color=color)
+        self.status_dot.configure(text_color=color)
 
     def _update(self, ae_percent: int, ae_category: int, rf_category: int):
         self.flow_count += 1
