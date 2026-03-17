@@ -1,10 +1,21 @@
 import sqlite3
+import logging
 import json
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pathlib import Path
-DB_PATH = Path(__file__).parent.parent / 'data' / 'nids_logs.db'
+BASE_DIR = Path(__file__).parent
+FLOW_DB_PATH = BASE_DIR.parent / 'data' / 'nids_flows.db'
+ALERT_DB_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.db'
+LOG_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.log'
+
+logger = logging.getLogger('nids_alerts')
+logger.setLevel(logging.INFO)
+
+handler = logging.FileHandler(LOG_PATH)
+handler.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(handler)
 
 def ip_to_str(ip_bytes):
     if ip_bytes is None:
@@ -18,23 +29,26 @@ def ip_to_str(ip_bytes):
         return str(ip_bytes)
 
 def init_db():
-    DB_PATH.parent.mkdir(exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
+    FLOW_DB_PATH.parent.mkdir(exist_ok=True)
+    with sqlite3.connect(FLOW_DB_PATH) as conn:
         conn.execute('''
         CREATE TABLE IF NOT EXISTS flow_logs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp   TEXT NOT NULL,
-            src_ip      TEXT,
-            dst_ip      TEXT,
-            src_port    INTEGER,
-            dst_port    INTEGER,
-            protocol    INTEGER,
-            ae_score    REAL,
-            ae_category INTEGER,
-            rf_score    REAL,
-            rf_category INTEGER,
-            ae_percent  INTEGER,
-            features    TEXT
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp     TEXT NOT NULL,
+            src_ip        TEXT,
+            dst_ip        TEXT,
+            src_port      INTEGER,
+            dst_port      INTEGER,
+            protocol      INTEGER,
+            ae_score      REAL,
+            ae_category   INTEGER,
+            rf_score      REAL,
+            rf_category   INTEGER,
+            ae_percent    INTEGER,
+            ae_features   TEXT,
+            rf_features   TEXT,
+            ja3_hash      TEXT,
+            ja3_malicious BOOLEAN
             )
         ''')
         conn.execute('''
@@ -44,14 +58,28 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_rf_category ON flow_logs(rf_category)
         ''')
 
-def log_flow(flow, ae_percent, ae_category, rf_category, ae_score, rf_score, features_dict=None):
-    conn = sqlite3.connect(DB_PATH)
+    with sqlite3.connect(ALERT_DB_PATH) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS alert_logs (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            type      TEXT,
+            severity  INTEGER,
+            message   TEXT,
+            timestamp TEXT NOT NULL
+            )
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON alert_logs(timestamp)
+        ''')
+
+def log_flow(flow, ae_percent, ae_category, rf_category, ae_score, rf_score, ae_features_dict, rf_features_dict, ja3_hash, ja3_malicious):
+    conn = sqlite3.connect(FLOW_DB_PATH)
     try:
         conn.execute(
             "INSERT INTO flow_logs "
             "(timestamp, src_ip, dst_ip, src_port, dst_port, protocol, "
-            "ae_score, ae_category, rf_score, rf_category, ae_percent, features) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "ae_score, ae_category, rf_score, rf_category, ae_percent, ae_features, rf_features, ja3_hash, ja3_malicious) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.utcnow().isoformat(),
                 ip_to_str(flow.get('src_ip')),
@@ -64,33 +92,66 @@ def log_flow(flow, ae_percent, ae_category, rf_category, ae_score, rf_score, fea
                 float(rf_score),
                 int(rf_category),
                 int(ae_percent),
-                json.dumps(features_dict) if features_dict else None
+                json.dumps(ae_features_dict) if ae_features_dict else None,
+                json.dumps(rf_features_dict) if rf_features_dict else None,
+                ja3_hash,
+                ja3_malicious
             )
         )
         conn.commit()
     finally:
         conn.close()
 
+def log_alert(alert:dict):
+    conn = sqlite3.connect(ALERT_DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO alert_logs "
+            "(type, severity, message, timestamp)"
+            "VALUES (?, ?, ?, ?)",
+            (
+                alert['type'],
+                alert['severity'],
+                alert['message'],
+                datetime.utcnow().isoformat()
+            )
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
-def view_db():
-    import sqlite3
-    from pathlib import Path
-    BASE_DIR = Path(__file__).parent
+def write_alert(alert:dict):
+    alert['timestamp'] = datetime.now(timezone.utc).isoformat()
+    logger.info(json.dumps(alert))
 
-    DB_PATH = Path(BASE_DIR.parent/'data'/'nids_logs.db')  # adjust to your actual path
-
-    with sqlite3.connect(DB_PATH) as conn:
+def view_flow_db():
+    with sqlite3.connect(FLOW_DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
 
-        # how many rows total
         count = conn.execute("SELECT COUNT(*) FROM flow_logs").fetchone()[0]
         print(f"Total logged flows: {count}")
 
-        # last 10 entries
         rows = conn.execute("""
-            SELECT timestamp, src_ip, dst_ip, src_port, dst_port,
-                   ae_percent, ae_category, rf_category
+            SELECT timestamp, src_ip, dst_ip, src_port, dst_port, protocol,
+                   ae_score, ae_category, rf_score, rf_category, ae_percent, ja3_hash, ja3_malicious
             FROM flow_logs 
+            ORDER BY id DESC 
+            LIMIT 10
+        """).fetchall()
+
+        for row in rows:
+            print(dict(row))
+
+def view_alert_db():
+    with sqlite3.connect(ALERT_DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+
+        count = conn.execute("SELECT COUNT(*) FROM alert_logs").fetchone()[0]
+        print(f"Total alerts: {count}")
+
+        rows = conn.execute("""
+            SELECT type, severity, message, timestamp
+            FROM alert_logs 
             ORDER BY id DESC 
             LIMIT 10
         """).fetchall()
@@ -100,4 +161,4 @@ def view_db():
 
 
 if __name__ == '__main__':
-    view_db()
+    view_flow_db()
