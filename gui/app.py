@@ -2,6 +2,9 @@ import customtkinter as ctk
 from collections import deque
 from datetime import datetime
 
+from pathlib import Path
+BASE_DIR = Path(__file__).parent
+
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
@@ -72,19 +75,24 @@ class RiskRow(ctk.CTkFrame):
 class App(ctk.CTk):
     def __init__(self, results_queue, stop_event=None, models_ready=None):
         super().__init__()
-        self.results_queue = results_queue
-        self.stop_event    = stop_event
-        self.models_ready  = models_ready
-        self.is_paused     = False
-        self.flow_count    = 0
-        self._baseline_buf = deque(maxlen=BASELINE_WINDOW)
-        self._recent       = deque(maxlen=12)
+        self.results_queue     = results_queue
+        self.stop_event        = stop_event
+        self.models_ready      = models_ready
+        self.is_paused         = False
+        self.flow_count        = 0
+        self._baseline_buf     = deque(maxlen=BASELINE_WINDOW)
+        self._recent           = deque(maxlen=12)
+        self._last_rf_level    = None
+        self._last_ae_category = 0
+        self._last_ae_percent  = 0
+        self._last_timestamp   = None
 
         self.title("NIDS")
         self.geometry("900x490")
         self.resizable(False, False)
         self.configure(fg_color=BG)
         self._build_ui()
+        self.iconbitmap(str(BASE_DIR.parent / 'gui' / 'resources' / 'nids_icon.ico'))
 
         # auto-start: if models already ready, go live immediately
         # if still loading, poll until ready then go live automatically
@@ -242,7 +250,75 @@ class App(ctk.CTk):
         self.status_lbl.configure(text="LIVE", text_color=AE_LEVEL_COLORS["normal"])
         if self.stop_event:
             self.stop_event.clear()
+        self._load_history()
+        self.after(0, self._apply_history)
         self.poll_results()
+
+    def _apply_history(self):
+        self._refresh_dots()
+        self.stat_flows.configure(text=str(self.flow_count))
+
+        if len(self._baseline_buf) >= 5:
+            baseline = int(sum(self._baseline_buf) / len(self._baseline_buf))
+            self.stat_baseline.configure(text=f'{baseline}%')
+            self.ae_baseline_label.configure(
+                text=f'baseline {baseline}% (from history)',
+                text_color=TEXT_DIM
+            )
+        elif len(self._baseline_buf) > 0:
+            self.ae_baseline_label.configure(
+                text=f'building baseline {len(self._baseline_buf)}/{BASELINE_WINDOW}',
+                text_color=TEXT_DIM
+            )
+
+        if self._last_rf_level:
+            self._display_update(self._last_ae_percent, self._last_ae_category, self._last_rf_level)
+
+    def _load_history(self):
+        import sqlite3
+
+        db_path = Path(__file__).parent.parent/ 'data' / 'nids_flows.db'
+        if not db_path.exists():
+            self._last_rf_level = None
+            return
+
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+
+                rows = conn.execute('''
+                    SELECT ae_percent, ae_category, rf_category, timestamp
+                    FROM flow_logs
+                    ORDER BY id DESC
+                    LIMIT 20
+                ''').fetchall()
+
+                total = conn.execute(
+                    'SELECT COUNT(*) FROM flow_logs'
+                ).fetchone()[0]
+
+            if not rows:
+                self._last_rf_level = None
+                return
+
+            rows = list(reversed(rows))
+
+            for row in rows:
+                ae_level = AE_LABELS[min(int(row['ae_category']), 3)]
+                self._baseline_buf.append(int(row['ae_percent']))
+                self._recent.appendleft(ae_level)
+
+            most_recent = rows[-1]
+            self._last_rf_level = min(most_recent['rf_category'], 3)
+            self._last_ae_category = min(most_recent['ae_category'], 3)
+            self._last_ae_percent = int(most_recent['ae_percent'])
+            self._last_timestamp = datetime.fromisoformat(most_recent['timestamp'])
+            self.flow_count = total
+
+        except Exception as e:
+            print(f'Could not load history {e}')
+            self._last_rf_level = None
+
 
     def _on_pause(self):
         if self.is_paused:
@@ -262,20 +338,55 @@ class App(ctk.CTk):
 
     def poll_results(self):
         wait_time = 1000
-        if not self.is_paused:
+        if self.is_paused:
+            self.after(wait_time, self.poll_results)
+            return
+        try:
+            qsize = self.results_queue.qsize()
+        except NotImplementedError:
+            qsize = 0
+
+        batch_size = max(1, min(qsize, 10))
+        last_flow = None
+        alerts = []
+
+        for _ in range(batch_size):
             try:
-                if not self.results_queue.empty():
-                    result = self.results_queue.get_nowait()
-                    if result is not None:
-                        if result['type'] == 'flow':
-                            ae_percent, ae_category, rf_category = result['payload']
-                            self._update(ae_percent, ae_category, rf_category)
-                        if result['type'] == 'alert':
-                            self.show_alert(result['payload'])
-                            wait_time = 10
+                result = self.results_queue.get_nowait()
+                if result is None:
+                    break
+                if result['type'] == 'flow':
+                    ae_percent, ae_category, rf_category, flow_timestamp = result['payload']
+                    flow_dt = datetime.fromisoformat(flow_timestamp)
+
+                    if self._last_timestamp is None or flow_dt > self._last_timestamp:
+                        self._last_timestamp = flow_dt
+                        ae_level = AE_LABELS[min(ae_category, 3)]
+                        self._baseline_buf.append(int(ae_percent))
+                        self._recent.appendleft(ae_level)
+                        self.flow_count += 1
+                        last_flow = result['payload']
+
+                elif result['type'] == 'alert':
+                    alerts.append(result['payload'])
             except Exception:
-                pass
+                continue
+
+        if last_flow is not None:
+            ae_percent, ae_category, rf_category, flow_timestamp = last_flow
+            self._display_update(ae_percent, ae_category, rf_category)
+
+        for alert in alerts:
+            self.show_alert(alert)
+
+        try:
+            remaining = self.results_queue.qsize()
+        except NotImplementedError:
+            remaining = 0
+
+        wait_time = 100 if remaining > 50 else 500 if remaining > 10 else 1000
         self.after(wait_time, self.poll_results)
+
 
     def show_alert(self, alert):
         print('Alert pinged in dashboard...')
@@ -293,15 +404,11 @@ class App(ctk.CTk):
         self.status_lbl.configure(text=f'ALERT: {alert_type.replace('_', ' ')}', text_color=color)
         self.status_dot.configure(text_color=color)
 
-    def _update(self, ae_percent: int, ae_category: int, rf_category: int):
-        self.flow_count += 1
+    def _display_update(self, ae_percent: int, ae_category: int, rf_category: int):
         rf_level = RF_LABELS[rf_category]
         ae_level = AE_LABELS[ae_category]
         ae_pct   = max(0, min(ae_percent, 100))
-
-        self._baseline_buf.append(ae_pct)
         baseline = int(sum(self._baseline_buf) / len(self._baseline_buf))
-        self._recent.appendleft(ae_level)
 
         self.risk_row.set_level(rf_level)
 
@@ -351,5 +458,14 @@ class App(ctk.CTk):
 
 
 def dashboard_process(results_queue, stop_event=None, models_ready=None):
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NIDS.NetworkIntrusionDetection')
     app = App(results_queue, stop_event=stop_event, models_ready=models_ready)
     app.mainloop()
