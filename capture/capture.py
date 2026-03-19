@@ -2,6 +2,7 @@ import ctypes
 import ctypes.util
 import sys
 import time
+import hashlib
 
 IPV6_EXT_HEADERS = {
             0,  # Hop-by-Hop Options
@@ -10,8 +11,11 @@ IPV6_EXT_HEADERS = {
             51,  # Authentication Header
             60,  # Destination Options
         }
+SWEEP_INTERVAL = 10.0 # seconds
+
 ACTIVITY_THRESHOLD = 1.0  # seconds
 TIMEOUT_THRESHOLD = 60.0  # seconds
+ACTIVE_TIMEOUT_THRESHOLD = 120.0 # seconds
 
 TCP_PROTOCOL = 6
 UDP_PROTOCOL = 17
@@ -23,6 +27,12 @@ network_interface = b'\\Device\\NPF_{9B0E2F16-226F-4133-B721-BD5C64A54D44}' if s
 snap_len = 256
 promiscuous = 1
 read_timeout = 1000
+
+GREASE_VALUES = {
+    0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a,
+    0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba,
+    0xcaca, 0xdada, 0xeaea, 0xfafa
+}
 
 class PcapPacketHeader(ctypes.Structure):
     _fields_ = [
@@ -115,6 +125,104 @@ def parse_ipv6(ipv6_bytes):
 
     return source_ip, destination_ip, source_port, destination_port, next_header, offset
 
+def parse_ja3(raw_bytes, transport_start):
+    try:
+        payload_start = transport_start + 20
+        if len(raw_bytes) < payload_start + 10:
+            return None
+
+        if raw_bytes[payload_start] != 0x16:
+            return None
+        if raw_bytes[payload_start + 5] != 0x01:
+            return None
+
+        position = payload_start + 9
+
+        if position + 2 > len(raw_bytes):
+            return None
+
+        tls_version = int.from_bytes(raw_bytes[position:position+2], 'big')
+        position += 2
+
+        position += 32
+
+        if position >= len(raw_bytes):
+            return None
+
+        session_id_len = raw_bytes[position]
+        position += 1 + session_id_len
+
+        if position + 2 > len(raw_bytes):
+            return None
+
+        cipher_len = int.from_bytes(raw_bytes[position:position+2], 'big')
+        position += 2
+        ciphers = []
+        end = position + cipher_len
+        while position + 1 < end and position + 1 < len(raw_bytes):
+            c = int.from_bytes(raw_bytes[position:position+2], 'big')
+            if c not in GREASE_VALUES:
+                ciphers.append(c)
+            position += 2
+        position = end
+
+        if position >= len(raw_bytes):
+            ja3_str = f'{tls_version},{'-'.join(map(str, ciphers))},,,'
+            return hashlib.md5(ja3_str.encode()).hexdigest()
+
+        comp_len = raw_bytes[position]
+        position += 1 + comp_len
+
+        if position + 2 > len(raw_bytes):
+            ja3_str = f'{tls_version},{'-'.join(map(str, ciphers))}...'
+            return hashlib.md5(ja3_str.encode()).hexdigest()
+
+        ext_total_len = int.from_bytes(raw_bytes[position:position+2], 'big')
+        position += 2
+
+        extensions = []
+        curves = []
+        point_formats = []
+        end_ext = position + ext_total_len
+
+        while position + 4 <= end_ext and position + 4 <= len(raw_bytes):
+            ext_type = int.from_bytes(raw_bytes[position:position+2], 'big')
+            ext_len = int.from_bytes(raw_bytes[position+2:position+4], 'big')
+            position += 4
+
+            if ext_type not in GREASE_VALUES:
+                extensions.append(ext_type)
+
+            if ext_type == 0x000a:
+                if position + 2 <= len(raw_bytes):
+                    curves_len = int.from_bytes(raw_bytes[position:position+2], 'big')
+                    for i in range(2, curves_len + 2, 2):
+                        if position + i + 1 < len(raw_bytes):
+                            g = int.from_bytes(raw_bytes[position+i:position+i+2], 'big')
+                            if g not in GREASE_VALUES:
+                                curves.append(g)
+
+            if ext_type == 0x000b:
+                if position < len(raw_bytes):
+                    fmt_len = raw_bytes[position]
+                    for i in range(1, fmt_len + 1):
+                        if position + i < len(raw_bytes):
+                            point_formats.append(raw_bytes[position+i])
+
+            position += ext_len
+
+        ja3_str = (
+            f'{tls_version},'
+            f'{'-'.join(map(str, ciphers))},'
+            f'{'-'.join(map(str, extensions))},'
+            f'{'-'.join(map(str, curves))},'
+            f'{'-'.join(map(str, point_formats))}'
+        )
+        return hashlib.md5(ja3_str.encode()).hexdigest()
+
+    except Exception as e:
+        print(f'Error: {e}')
+
 def get_flow(flow_id, flow_state):
     if flow_id in flow_state:
         return flow_state[flow_id]
@@ -141,6 +249,8 @@ def get_flow(flow_id, flow_state):
         "total_iat_stats": RunningStats(),
         "fwd_iat_stats": RunningStats(),
         "bwd_iat_stats": RunningStats(),
+        "fwd_iat_total": 0.0,
+        "bwd_iat_total": 0.0,
         "active_stats": RunningStats(),
         "idle_stats": RunningStats(),
 
@@ -153,6 +263,9 @@ def get_flow(flow_id, flow_state):
         # timestamps
         "start_time": None,
         "last_seen": None,
+
+        # JA3 Hash, computed separately
+        "ja3_hash": None,
     }
 
     return flow_state[flow_id]
@@ -168,6 +281,7 @@ def make_canonical(flow_id):
 def capture_process(queue, stop_capture, interface_type): # other type is live-capture
     flow_state = {}  # 6 tuple - flow dicts (flow_key: state)
     epoch_counters = {} # (traditional 5 tuple: epoch id)
+    last_sweep = None
 
     if sys.platform == 'win32':
         libpcap = ctypes.CDLL(r'C:\Windows\System32\Npcap\wpcap.dll')
@@ -188,7 +302,7 @@ def capture_process(queue, stop_capture, interface_type): # other type is live-c
     libpcap.pcap_next_ex.restype = ctypes.c_int
 
     if interface_type == 'simulation':
-        handle = libpcap.pcap_open_offline(b'C:/Users/London/Documents/GitHub/NIDS/datasets/raw/pcaps/FIRST-2015_Hands-on_Network_Forensics_PCAP/2015-03-05/snort.log.1425565276', error_buffer)
+        handle = libpcap.pcap_open_offline(b'C:/Users/London/Documents/GitHub/NIDS/datasets/raw/pcaps/FIRST-2015_Hands-on_Network_Forensics_PCAP/2015-03-05/snort.log.1425572414', error_buffer)
     elif interface_type == 'live-capture':
         handle = libpcap.pcap_open_live(network_interface, snap_len, promiscuous, read_timeout, error_buffer)
     else:
@@ -241,6 +355,7 @@ def capture_process(queue, stop_capture, interface_type): # other type is live-c
             syn = (flags & 0x02) != 0
             rst = (flags & 0x04) != 0
             ack = (flags & 0x10) != 0
+
         if protocol == UDP_PROTOCOL:
             fin = 0
             syn = 0
@@ -257,16 +372,40 @@ def capture_process(queue, stop_capture, interface_type): # other type is live-c
         current_timestamp = header[0].tv_sec + header[0].tv_usec / 1e6
         last_seen = flow['last_seen']
 
+        if last_sweep is None:
+            last_sweep = current_timestamp
+
+        if current_timestamp - last_sweep >= SWEEP_INTERVAL:
+            last_sweep = current_timestamp
+            to_export = [ # find all flows that have passed the active timeout threshold, store in this list
+                (k, v) for k, v in flow_state.items()
+                if v['start_time'] is not None and
+                   current_timestamp - v['start_time'] >= ACTIVE_TIMEOUT_THRESHOLD
+            ]
+            for swept_key, swept_flow in to_export:
+                if swept_flow['fwd_packets'] + swept_flow['bwd_packets'] > 0:
+                    queue.put(swept_flow)
+                del flow_state[swept_key]
+                swept_canonical = swept_key[1:]
+                epoch_counters[swept_canonical] = swept_key[0] + 1
+
         while last_seen is not None and current_timestamp - last_seen >= TIMEOUT_THRESHOLD:
-            if flow['fwd_packets'] + flow['bwd_packets'] > 0:
-                queue.put(flow)
-            del flow_state[flow_key]
+            if flow_key in flow_state:
+                if flow['fwd_packets'] + flow['bwd_packets'] > 0:
+                    queue.put(flow)
+                del flow_state[flow_key]
 
             epoch_id += 1
             epoch_counters[canonical] = epoch_id
             flow_key = (epoch_id,) + canonical
             flow = get_flow(flow_key, flow_state)
             last_seen = flow['last_seen']
+
+        if protocol == TCP_PROTOCOL and (source_port == 443 or destination_port == 443):
+            if flow['ja3_hash'] is None:
+                ja3 = parse_ja3(raw_bytes, transport_start)
+                if ja3 is not None:
+                    flow['ja3_hash'] = ja3
 
         if flow['src_ip'] is None and flow['dst_ip'] is None and flow['src_port'] is None and flow['dst_port'] is None and flow['protocol'] is None:
             flow['src_ip'] = source_ip
@@ -287,6 +426,7 @@ def capture_process(queue, stop_capture, interface_type): # other type is live-c
             IAT = current_timestamp - last_seen
             flow['total_iat_stats'].update(IAT)
             flow[f'{direction}_iat_stats'].update(IAT)
+            flow[f'{direction}_iat_total'] += IAT
 
             if IAT < ACTIVITY_THRESHOLD:
                 flow['current_active'] += IAT
@@ -306,6 +446,7 @@ def capture_process(queue, stop_capture, interface_type): # other type is live-c
         flow['last_seen'] = current_timestamp
 
         if rst or fin:
-            queue.put(flow)
-            del flow_state[flow_key]
-            epoch_counters[canonical] = epoch_id + 1
+            if flow_key in flow_state:
+                queue.put(flow)
+                del flow_state[flow_key]
+                epoch_counters[canonical] = epoch_id + 1
