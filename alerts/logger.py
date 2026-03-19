@@ -1,14 +1,23 @@
+import ctypes
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NIDS.NetworkIntrusionDetection')
+
 import sqlite3
 import logging
 import json
 import socket
 from datetime import datetime, timezone
+from windows_toasts import WindowsToaster, Toast, ToastDisplayImage, ToastDuration
 
 from pathlib import Path
 BASE_DIR = Path(__file__).parent
 FLOW_DB_PATH = BASE_DIR.parent / 'data' / 'nids_flows.db'
 ALERT_DB_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.db'
 LOG_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.log'
+
+ICON_PATH = BASE_DIR.parent / 'gui' / 'resources' / 'nids_logo.png'
+APP_ID = 'NIDS.NetworkIntrusionDetection'
+
+toaster = WindowsToaster(APP_ID)
 
 logger = logging.getLogger('nids_alerts')
 logger.setLevel(logging.INFO)
@@ -81,7 +90,7 @@ def log_flow(flow, ae_percent, ae_category, rf_category, ae_score, rf_score, ae_
             "ae_score, ae_category, rf_score, rf_category, ae_percent, ae_features, rf_features, ja3_hash, ja3_malicious) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 ip_to_str(flow.get('src_ip')),
                 ip_to_str(flow.get('dst_ip')),
                 int(flow.get('src_port', 0)),
@@ -113,7 +122,7 @@ def log_alert(alert:dict):
                 alert['type'],
                 alert['severity'],
                 alert['message'],
-                datetime.utcnow().isoformat()
+                datetime.now(timezone.utc).isoformat()
             )
         )
         conn.commit()
@@ -123,6 +132,31 @@ def log_alert(alert:dict):
 def write_alert(alert:dict):
     alert['timestamp'] = datetime.now(timezone.utc).isoformat()
     logger.info(json.dumps(alert))
+
+def send_system_notification(alert:dict):
+    alert_type = alert.get('type', 'ALERT')
+    message = alert.get('message', '')
+    severity = alert.get('severity', 0)
+
+    title_map = {
+        'EXPLICIT_ATTACK_DETECTION': 'Attack Detected',
+        'SYSTEMIC_ANOMALY':          'Anomalous Traffic',
+        'JA3_MATCH':                 'Malware Fingerprint Matched',
+        'MODEL_DRIFT_DETECTION' :    'Model Drift Detected',
+        'MODEL_ROLLBACK':            'Model Rolled Back'
+    }
+
+    title = title_map.get(alert_type, 'NIDS - Alert')
+    body = message
+
+    toast = Toast()
+    toast.text_fields = [title, body]
+    toast.duration = ToastDuration.Default
+
+    if ICON_PATH.exists():
+        toast.AddImage(ToastDisplayImage.fromPath(str(ICON_PATH)))
+
+    toaster.show_toast(toast)
 
 def view_flow_db():
     with sqlite3.connect(FLOW_DB_PATH) as conn:
