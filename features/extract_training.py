@@ -51,7 +51,7 @@ def extract_features_rf(df, label="", save_type=None):
     ack = df['ACK Flag Count']
     fin = df['FIN Flag Count']
     rst = df['RST Flag Count']
-    duration = df['Flow Duration']
+    duration = df['Flow Duration'] / 1_000_000
 
     all_protocols = [0, 6, 17]
     if 'Protocol' not in df.columns:
@@ -65,7 +65,7 @@ def extract_features_rf(df, label="", save_type=None):
 
     features['Port'] = port_category(df['Destination Port'])
     # features['IP'] = is_private(df['Destination IP'])
-    features['Duration'] = duration / 1_000_000
+    features['Duration'] = duration
     features['In/Out Ratio'] = fwd / (bwd + 1e-6)
 
     features['Total Packets'] = fwd + bwd
@@ -141,6 +141,13 @@ def extract_features_rf(df, label="", save_type=None):
     features['Fin/Ack Ratio'] = fin / (ack + 1e-6)
     features['Rst/Syn Ratio'] = rst / (syn + 1e-6)
 
+    rate_cols = [
+        'Total Packet Rate', 'Total Byte Rate',
+        'Forward Packet Rate', 'Forward Byte Rate',
+        'Backward Packet Rate', 'Backward Byte Rate',
+        'Syn Rate', 'Ack Rate', 'Fin Rate', 'Rst Rate'
+    ]
+
     features = features.replace([np.inf, -np.inf], np.nan)
     features = features.fillna(0)
     features = features.clip(-1e6, 1e6)
@@ -148,8 +155,10 @@ def extract_features_rf(df, label="", save_type=None):
 
     if save_type == 'export':
         if 'Label' in df.columns:
-            labels = (df['Label'] != 'BENIGN').astype(int)
-            labels.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_labels_{label}.csv', index=False)
+            binary_labels = (df['Label'] != 'BENIGN').astype(int)
+            binary_labels.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_labels_{label}.csv', index=False)
+
+            df['Label'].to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_categories_{label}.csv', index=False)
 
         features.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_{label}.csv', index=False)
         return None
@@ -171,9 +180,9 @@ def extract_features_ae(df, label="", save_type=None):
 
     fwd = df['Total Fwd Packets']
     bwd = df['Total Backward Packets']
-    duration = df['Flow Duration'].clip(lower=0)
+    duration = df['Flow Duration'].clip(lower=0) / 1_000_000
 
-    features['Duration'] = np.log1p(duration / 1_000_000)
+    features['Duration'] = np.log1p(duration)
     features['In/Out Ratio'] = np.log1p(fwd) - np.log1p(bwd)
     features['Absolute Difference'] = abs(fwd - bwd) / (fwd + bwd + 1e-6)
     features['Byte Rate Asymmetry'] = abs(np.log1p((df['Fwd Packet Length Mean'] * fwd) / (duration + 1e-6)) - np.log1p((df['Bwd Packet Length Mean'] * bwd) / (duration + 1e-6)))
@@ -197,7 +206,6 @@ def extract_features_ae(df, label="", save_type=None):
     features['Active Std'] = np.log1p((df['Active Std']) / 1_000_000)
     features['Idle Mean'] = np.log1p((df['Idle Mean']) / 1_000_000)
     features['Idle Std'] = np.log1p((df['Idle Std']) / 1_000_000)
-    # features['Failed Connection'] = 1 if ((features['proto_'] == 6) and (syn > 0) and (ack == 0)) else 0
 
     features = features.replace([np.inf, -np.inf], np.nan)
     features = features.fillna(0)
@@ -211,19 +219,31 @@ def extract_features_ae(df, label="", save_type=None):
     return features
 
 def process_raw_dataset():
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated/CICIDS2017_ae_training.csv', low_memory=False)
+    if not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_training.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_training.csv').exists()\
+    or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_testing_malicious.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_training.csv').exists()\
+    or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_testing.csv').exists():
+        from scripts.build_dataframe import init_dataframes
+        init_dataframes()
+
+    if not Path(BASE_DIR.parent/'datasets'/'processed').exists():
+        import os
+        os.mkdir(BASE_DIR.parent/'datasets'/'processed')
+
+    print('Processing dataset...')
+
+    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_training.csv', low_memory=False)
     extract_features_ae(df, 'training', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated/CICIDS2017_ae_testing_benign.csv', low_memory=False)
+    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_testing_benign.csv', low_memory=False)
     extract_features_ae(df, 'testing_benign', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated/CICIDS2017_ae_testing_malicious.csv', low_memory=False)
+    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_testing_malicious.csv', low_memory=False)
     extract_features_ae(df, 'testing_malicious', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated/CICIDS2017_rf_training.csv', low_memory=False)
+    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_training.csv', low_memory=False)
     extract_features_rf(df, 'training', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated/CICIDS2017_rf_testing.csv', low_memory=False)
+    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_testing.csv', low_memory=False)
     extract_features_rf(df, 'testing', save_type='export')
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ def extract_features_ae(flow):
     bwd_bytes = flow['bwd_bytes']
 
     features = {
-        "Duration": duration,
+        "Duration": np.log1p(duration),
         "In/Out Ratio": np.log1p(fwd) - np.log1p(bwd),
         "Absolute Difference": abs(fwd - bwd) / (fwd + bwd + 1e-6),
         "Byte Rate Asymmetry": abs(np.log1p(fwd_bytes / (duration + 1e-6)) - np.log1p(bwd_bytes / (duration + 1e-6))),
@@ -91,21 +91,21 @@ def extract_features_rf(flow):
         'Backward Byte Std': flow['bwd_byte_stats'].std,
         'Backward Byte Variance': flow['bwd_byte_stats'].variance,
 
-        'Total IAT': flow['total_iat_stats'].mean * (fwd + bwd) if fwd + bwd != 0 else 0.0,
+        'Total IAT': flow['bwd_iat_total'] + flow['fwd_iat_total'],
         'Total IAT Max': flow['total_iat_stats'].max,
         'Total IAT Min': flow['total_iat_stats'].min,
         'Total IAT Mean': flow['total_iat_stats'].mean,
         'Total IAT Std': flow['total_iat_stats'].std,
         'Total IAT Variance': flow['total_iat_stats'].variance,
 
-        'Forward IAT': flow['fwd_iat_stats'].mean * fwd if fwd != 0 else 0.0,
+        'Forward IAT': flow['fwd_iat_total'],
         'Forward IAT Max': flow['fwd_iat_stats'].max,
         'Forward IAT Min': flow['fwd_iat_stats'].min,
         'Forward IAT Mean': flow['fwd_iat_stats'].mean,
         'Forward IAT Std': flow['fwd_iat_stats'].std,
         'Forward IAT Variance': flow['fwd_iat_stats'].variance,
 
-        'Backward IAT': flow['bwd_iat_stats'].mean * bwd if bwd != 0 else 0.0,
+        'Backward IAT': flow['bwd_iat_total'],
         'Backward IAT Max': flow['bwd_iat_stats'].max,
         'Backward IAT Min': flow['bwd_iat_stats'].min,
         'Backward IAT Mean': flow['bwd_iat_stats'].mean,
