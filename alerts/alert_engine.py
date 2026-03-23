@@ -1,7 +1,6 @@
 from collections import deque
 from datetime import datetime, timedelta
 from alerts.logger import ip_to_str
-import threading
 
 class AlertEngine:
     def __init__(self, rf_threshold, ae_threshold, results_queue, flash_event=None):
@@ -19,7 +18,6 @@ class AlertEngine:
             return True
         return datetime.now() - self.last_ae_notification > self.AE_COOLDOWN
 
-
     def evaluate(self, ae_category, rf_category, rf_score, ja3_hash, ja3_malicious, flow):
         self.recent_ae.append(ae_category)
 
@@ -35,7 +33,7 @@ class AlertEngine:
             })
             self.alerted = False
 
-        if len(self.recent_ae) >= 10:
+        if len(self.recent_ae) >= 10 and self._should_notify_ae():
             severe_count = sum(1 for s in self.recent_ae if s >= self.ae_threshold)
             if severe_count >= 6 and not self.alerted:
                 src = flow.get('src_ip')

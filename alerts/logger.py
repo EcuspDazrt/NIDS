@@ -1,12 +1,16 @@
-import ctypes
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NIDS.NetworkIntrusionDetection')
+import sys
+if sys.platform == 'win32':
+    import ctypes
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NIDS.NetworkIntrusionDetection')
+    from windows_toasts import WindowsToaster, Toast, ToastDisplayImage, ToastDuration
+    APP_ID = 'NIDS.NetworkIntrusionDetection'
+    toaster = WindowsToaster(APP_ID)
 
 import sqlite3
 import logging
 import json
 import socket
 from datetime import datetime, timezone
-from windows_toasts import WindowsToaster, Toast, ToastDisplayImage, ToastDuration
 
 from pathlib import Path
 BASE_DIR = Path(__file__).parent
@@ -15,9 +19,6 @@ ALERT_DB_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.db'
 LOG_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.log'
 
 ICON_PATH = BASE_DIR.parent / 'gui' / 'resources' / 'nids_logo.png'
-APP_ID = 'NIDS.NetworkIntrusionDetection'
-
-toaster = WindowsToaster(APP_ID)
 
 logger = logging.getLogger('nids_alerts')
 logger.setLevel(logging.INFO)
@@ -134,6 +135,9 @@ def write_alert(alert:dict):
     logger.info(json.dumps(alert))
 
 def send_system_notification(alert:dict):
+    if sys.platform != 'win32':
+        return
+
     alert_type = alert.get('type', 'ALERT')
     message = alert.get('message', '')
     severity = alert.get('severity', 0)

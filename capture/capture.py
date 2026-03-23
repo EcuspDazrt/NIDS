@@ -23,7 +23,6 @@ UDP_PROTOCOL = 17
 ETHERTYPE_IPV4 = 0x0800
 ETHERTYPE_IPV6 = 0x86DD
 
-network_interface = b'\\Device\\NPF_{9B0E2F16-226F-4133-B721-BD5C64A54D44}' if sys.platform == 'win32' else b'eth0' if sys.platform == 'linux' else None
 snap_len = 256
 promiscuous = 1
 read_timeout = 1000
@@ -278,7 +277,7 @@ def make_canonical(flow_id):
 
     return dst_ip, src_ip, dst_port, src_port, proto
 
-def capture_process(queue, stop_capture, interface_type): # other type is live-capture
+def capture_process(queue, stop_capture, interface_type, interface=None): # other type is live-capture
     flow_state = {}  # 6 tuple - flow dicts (flow_key: state)
     epoch_counters = {} # (traditional 5 tuple: epoch id)
     last_sweep = None
@@ -304,7 +303,7 @@ def capture_process(queue, stop_capture, interface_type): # other type is live-c
     if interface_type == 'simulation':
         handle = libpcap.pcap_open_offline(b'C:/Users/London/Documents/GitHub/NIDS/datasets/raw/pcaps/FIRST-2015_Hands-on_Network_Forensics_PCAP/2015-03-05/snort.log.1425572414', error_buffer)
     elif interface_type == 'live-capture':
-        handle = libpcap.pcap_open_live(network_interface, snap_len, promiscuous, read_timeout, error_buffer)
+        handle = libpcap.pcap_open_live(interface, snap_len, promiscuous, read_timeout, error_buffer)
     else:
         return
 
