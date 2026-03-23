@@ -20,7 +20,11 @@ def evaluate_model():
     with open(BASE_DIR.parent/'models'/'artifacts'/'thresholds.json') as f:
         t = json.load(f)
     thresholds = t['ae']
-    binary_threshold = thresholds[0]
+    binary_threshold = t['ae_binary']
+
+    if not Path(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_benign.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_malicious.csv').exists():
+        from features.extract_training import process_raw_dataset
+        process_raw_dataset()
 
     features_benign = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_benign.csv', low_memory=False)
     features_malicious = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'ae_testing_malicious.csv', low_memory=False)
@@ -31,7 +35,7 @@ def evaluate_model():
         recon = model(x)
         error = ((x - recon) ** 2).mean(dim=1)
 
-    y_true = pd.DataFrame({'label': [0] * len(features_benign) + [1] * len(features_malicious)})
+    y_true = pd.Series([0] * len(features_benign) + [1] * len(features_malicious))
     binary_predictions = (error > binary_threshold).int()
     print(classification_report(y_true, binary_predictions))
 
