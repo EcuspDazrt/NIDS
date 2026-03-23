@@ -115,13 +115,11 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
                         try_retrain()
                     except Exception as e:
                         print(f'Retraining check failed: {e}')
-    print('Functions initialized')
 
     menu = pystray.Menu(
         pystray.MenuItem('Open Dashboard', open_dashboard, default=True),
         pystray.MenuItem('Stop NIDS', stop_system)
     )
-    print('Menu created')
 
     icon_img = Image.open(BASE_DIR.parent/'gui'/'resources'/'nids_icon.ico').resize((256, 256))
     icon = pystray.Icon(

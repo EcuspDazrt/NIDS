@@ -1,4 +1,4 @@
-# ADR-017: Flow Timeout
+# ADR-018: Flow Timeout
 
 **Date:** 2026-03-12
 **Status:** Accepted

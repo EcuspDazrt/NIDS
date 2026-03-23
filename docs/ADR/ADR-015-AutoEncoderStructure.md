@@ -1,7 +1,7 @@
 # ADR-015: Auto-Encoder Structure
 
 **Date:** 2026-03-10
-**Status:** Superseded by [ADR-019](ADR-019-AutoEncoderStructure.md)
+**Status:** Accepted
 
 ## Context
 - The auto-encoder structure must be optimized to counteract against direct memorization of features so it will learn general patterns across the features.

@@ -1,7 +1,7 @@
 # ADR-012: Feature Scaling
 
 **Date:** 2026-03-09
-**Status:** Accepted
+**Status:** Accepted - Modified by [ADR-022](ADR-022-RemoveRobustScaler.md)
 
 ## Context
 - Network traffic features can be skewed immensely, and require the correct scaling methods to maintain the model's precision and recall.
@@ -9,7 +9,7 @@
 
 ## Decision
 - For the autoencoder: log1p on each feature, then apply StandardScaler.
-- For the random forest: apply RobustScaler only.
+- For the random forest: apply RobustScaler only. (See [ADR-022](ADR-022-RemoveRobustScaler.md) for the modification)
 
 
 ## Alternatives Considered
