@@ -68,7 +68,7 @@ What you’re measuring: Reconstruction error distributions for benign vs. attac
 Expected outcome: (What do you think will happen and why?)
 Actual results: (Fill in after running)
 Notes/observations:
-### Experiment 3 — Ensemble vs. Individual Models
+### Experiment 3 — Layered Detection vs. Single Model
 Hypothesis: Combining the Random Forest classification score and the Autoencoder
 anomaly score improves overall detection compared to either model alone, particularly on
 attack types underrepresented in training data.
@@ -93,7 +93,6 @@ Fill this in once experiments are complete. A table comparing all experiments si
 |----------------------|-----------|--------|----|---------|---------------------|-------|
 | RF Baseline          |           |        |    |         |                     |       |
 | Autoencoder Baseline |           |        |    |         |                     |       |
-| Ensemble             |           |        |    |         |                     |       |
 ## 6. Analysis & Conclusions
 What did the results tell you? What worked, what didn’t, and what would you do differently?
 6.1 What Worked
@@ -101,8 +100,21 @@ What did the results tell you? What worked, what didn’t, and what would you do
 6.3 Limitations of These Experiments
 6.4 What You’d Test Next
 ## 7. Reproducibility Notes
-Python version:
-Key library versions (scikit-learn, tensorflow/pytorch, numpy, pandas):
+Python version: 3.13.5  
+
+Key library versions:  
+- Scikit-learn: 1.8.0  
+- Pytorch: 2.10.0  
+- Numpy: 2.4.2  
+- Pandas: 3.0.1  
+- Joblib: 1.5.3  
+
 Random seed(s) used:
+- Random Forest State: 42
+- Train/Test Split State: 42
+- Isolation Forest State: 42
+- Auto-encoder Manual Seed: 42  
+
 Hardware/environment:
+- Run on CPU (default in this script)
 How to run: (reference to a script or notebook)
