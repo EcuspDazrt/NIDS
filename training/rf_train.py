@@ -1,5 +1,4 @@
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import RobustScaler
 import pandas as pd
 import joblib as jb
 
@@ -16,15 +15,15 @@ def create_model():
         random_state=42,
     )
 
+    if not Path(BASE_DIR.parent/'datasets'/'processed'/'rf_training.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'processed'/'rf_labels_training.csv').exists():
+        from features.extract_training import process_raw_dataset
+        process_raw_dataset()
+
     x_train = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_training.csv', low_memory=False)
     y_train = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_labels_training.csv', low_memory=False)['Label'].values
 
-    scaler = RobustScaler()
-    x_scaled = scaler.fit_transform(x_train)
-    jb.dump(scaler, BASE_DIR.parent/'models'/'artifacts'/'rf_scaler.pkl')
-
-    print('fitting rf model...')
-    rf.fit(x_scaled, y_train)
+    print('Fitting rf model...')
+    rf.fit(x_train, y_train)
     jb.dump(rf, BASE_DIR.parent/'models'/'artifacts'/'rf_model.pkl')
 
 if __name__ == '__main__':
