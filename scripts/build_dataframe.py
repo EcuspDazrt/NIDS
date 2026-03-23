@@ -3,24 +3,14 @@ import pandas as pd
 
 # initialize training and eval raw datasets
 BASE_DIR = Path(__file__).parent
-paths_training = [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows'/'TrafficLabelling'/'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv']
-
-paths_testing =  [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
-                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
-                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
-                  BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
-
-all_paths = [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Friday-WorkingHours-Morning.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Tuesday-WorkingHours.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Wednesday-workingHours.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'GeneratedLabelledFlows/TrafficLabelling/Monday-WorkingHours.pcap_ISCX.csv']
+all_paths = [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Friday-WorkingHours-Morning.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Tuesday-WorkingHours.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Wednesday-workingHours.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Monday-WorkingHours.pcap_ISCX.csv']
 
 def drop(df, handle_benign):
     df.columns = df.columns.str.strip()
@@ -74,14 +64,33 @@ def create_dataframe(paths, label, handle_benign=None):
     for path in paths:
         df = pd.concat([df, drop(pd.read_csv(path, encoding='latin1', low_memory=False), handle_benign=handle_benign)], ignore_index=True)
 
-    df.to_csv(BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Aggregated'/f'CICIDS2017_{label}.csv', index=False)
+    df.to_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/f'CICIDS2017_{label}.csv', index=False)
 
 def init_dataframes():
-    create_dataframe(paths_testing, 'ae_testing_benign', handle_benign='KEEP')
-    create_dataframe(paths_testing, 'ae_testing_malicious', handle_benign='DROP')
-    create_dataframe(paths_testing, 'rf_testing')
-    create_dataframe(paths_training, 'ae_training', handle_benign='KEEP')
-    create_dataframe(paths_training, 'rf_training')
+    print('Initializing dataframes...')
+
+    if not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated').exists():
+        import os
+        os.mkdir(BASE_DIR.parent/'datasets'/'raw'/'Aggregated')
+
+    all_df = pd.DataFrame()
+    for path in all_paths:
+        df = pd.read_csv(path, encoding='latin1', low_memory=False)
+        df.columns = df.columns.str.strip()
+        all_df = pd.concat([all_df, df], ignore_index=True)
+
+    from sklearn.model_selection import train_test_split
+    train_df, test_df = train_test_split(
+        all_df,
+        test_size=0.3,
+        stratify=all_df['Label'],
+        random_state=42)
+
+    train_df[train_df['Label'] == 'BENIGN'].drop('Label', axis=1).to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_ae_training.csv', index=False)
+    test_df[test_df['Label'] == 'BENIGN'].drop('Label', axis=1).to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_ae_testing_benign.csv', index=False)
+    test_df[test_df['Label'] != 'BENIGN'].drop('Label', axis=1).to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_ae_testing_malicious.csv',index=False)
+    train_df.to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_rf_training.csv', index=False)
+    test_df.to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_rf_testing.csv', index=False)
 
 if __name__ == '__main__':
     init_dataframes()

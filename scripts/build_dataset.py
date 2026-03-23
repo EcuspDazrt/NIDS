@@ -6,11 +6,11 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
 
-def create_dataset(features, batch_size=2048, loader=True, training=False):
+def create_dataset(features, batch_size=2048, loader=True, update_scaler=False):
     if not Path(BASE_DIR.parent / 'models' / 'artifacts').exists():
         Path(BASE_DIR.parent / 'models' / 'artifacts').mkdir()
 
-    if training:
+    if update_scaler:
         scaler = StandardScaler()
         X_np = scaler.fit_transform(features)
         jb.dump(scaler, BASE_DIR.parent/'models'/'artifacts'/'ae_scaler.pkl')
