@@ -23,6 +23,7 @@ ICON_PATH = BASE_DIR.parent / 'gui' / 'resources' / 'nids_logo.png'
 logger = logging.getLogger('nids_alerts')
 logger.setLevel(logging.INFO)
 
+LOG_PATH.parent.mkdir(exist_ok=True)
 handler = logging.FileHandler(LOG_PATH)
 handler.setFormatter(logging.Formatter('%(message)s'))
 logger.addHandler(handler)

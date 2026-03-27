@@ -1,5 +1,5 @@
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from alerts.logger import ip_to_str
 
 class AlertEngine:
@@ -10,13 +10,24 @@ class AlertEngine:
         self.rf_threshold = rf_threshold
         self.ae_threshold = ae_threshold
         self.last_ae_notification = None
+        self.last_rf_notification = None
+        self.last_hash_notification = None
         self._flash_event = flash_event
+        self.HASH_COOLDOWN = timedelta(seconds=20)
         self.AE_COOLDOWN = timedelta(minutes=10)
+        self.RF_COOLDOWN = timedelta(seconds=10)
+        self.RF_PER_IP_COOLDOWN = timedelta(minutes=5)
+        self._rf_alerted_ips = {}
 
     def _should_notify_ae(self):
         if self.last_ae_notification is None:
             return True
         return datetime.now() - self.last_ae_notification > self.AE_COOLDOWN
+
+    def _should_notify_rf(self):
+        if self.last_rf_notification is None:
+            return True
+        return datetime.now() - self.last_rf_notification > self.RF_COOLDOWN
 
     def evaluate(self, ae_category, rf_category, rf_score, ja3_hash, ja3_malicious, flow):
         self.recent_ae.append(ae_category)
@@ -24,14 +35,22 @@ class AlertEngine:
         if rf_category >= self.rf_threshold:
             src = flow.get('src_ip')
             dst = flow.get('dst_ip')
-            self._fire({
-                'type': 'EXPLICIT_ATTACK_DETECTION',
-                'severity': rf_category,
-                'message': f'Known attack pattern detected (RF score: {rf_score:.3f})',
-                'flow_src': ip_to_str(src) if isinstance(src, bytes) else str(src),
-                'flow_dst': ip_to_str(dst) if isinstance(dst, bytes) else str(dst),
-            })
-            self.alerted = False
+
+            ip_timestamp = self._rf_alerted_ips.get(src, None)
+
+            if (ip_timestamp is None or datetime.now() - ip_timestamp > self.RF_PER_IP_COOLDOWN) and self._should_notify_rf():
+                self._fire({
+                    'type': 'EXPLICIT_ATTACK_DETECTION',
+                    'severity': rf_category,
+                    'message': f'Known attack pattern detected (RF score: {rf_score:.3f})',
+                    'flow_src': ip_to_str(src) if isinstance(src, bytes) else str(src),
+                    'flow_dst': ip_to_str(dst) if isinstance(dst, bytes) else str(dst),
+                })
+                self.last_rf_notification = datetime.now()
+
+            self._rf_alerted_ips[src] = datetime.now()
+
+
 
         if len(self.recent_ae) >= 10 and self._should_notify_ae():
             severe_count = sum(1 for s in self.recent_ae if s >= self.ae_threshold)
@@ -53,13 +72,15 @@ class AlertEngine:
         if ja3_malicious:
             src = flow.get('src_ip')
             dst = flow.get('dst_ip')
-            self._fire({
-                'type': 'JA3_MATCH',
-                'severity':4,
-                'message': f'Known malware TLS fingerprint matched: {ja3_hash}',
-                'flow_src': ip_to_str(src) if isinstance(src, bytes) else str(src),
-                'flow_dst': ip_to_str(dst) if isinstance(dst, bytes) else str(dst),
-            })
+
+            if self.last_hash_notification is None or datetime.now() - self.last_hash_notification > self.HASH_COOLDOWN:
+                self._fire({
+                    'type': 'JA3_MATCH',
+                    'severity':4,
+                    'message': f'Known malware TLS fingerprint matched: {ja3_hash}',
+                    'flow_src': ip_to_str(src) if isinstance(src, bytes) else str(src),
+                    'flow_dst': ip_to_str(dst) if isinstance(dst, bytes) else str(dst),
+                })
 
     def signal_drift(self, reason):
         self._fire({
@@ -83,7 +104,6 @@ class AlertEngine:
         self._flash_event = event
 
     def _fire(self, alert):
-        from datetime import datetime, timezone
         from alerts.logger import log_alert, write_alert, send_system_notification
 
         alert['timestamp'] = datetime.now(timezone.utc).isoformat()
