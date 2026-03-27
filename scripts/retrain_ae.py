@@ -32,7 +32,7 @@ def log_retrain_event(sample_count, pre_loss, post_loss, duration_seconds, skipp
         'post_loss': post_loss,
         'improvement': None if not pre_loss or not post_loss else round(pre_loss - post_loss, 6),
         'duration_seconds': duration_seconds,
-        'skipped_reason': skipped_reason,
+        'skipped_reason': str(skipped_reason),
         'model_path': str(BASE_DIR.parent/'models'/'artifacts'/'ae_model.pt'),
         'backup_path': str(BASE_DIR.parent/'models'/'artifacts'/f'ae_model_backup_{datetime.now(timezone.utc).isoformat()}.pt')
     }
@@ -40,7 +40,10 @@ def log_retrain_event(sample_count, pre_loss, post_loss, duration_seconds, skipp
     with open(OFFLINE_LOG_PATH, 'a') as f:
         f.write(json.dumps(entry) + '\n')
 
-def try_retrain():
+def try_retrain(defenses=None):
+    if defenses is None:
+        defenses = {'Isolation Forest':True, 'Temporal Isolation':True, 'Rollback':True}
+
     with sqlite3.connect(FLOW_DB_PATH) as conn:
         total = conn.execute('''
             SELECT count(*) FROM flow_logs
@@ -52,11 +55,14 @@ def try_retrain():
         ''').fetchone()[0]
 
         if time_overflow and total >= FLOW_THRESHOLD:
-            start_offline_train()
+            start_offline_train(defenses=defenses)
         else:
             print('Ineligible for retraining')
 
-def start_offline_train():
+def start_offline_train(defenses=None):
+    if defenses is None:
+        defenses = {'Isolation Forest':True, 'Temporal Isolation':True, 'Rollback':True}
+
     # loading previous model and calculating initial normal fraction first
     from models.definitions.autoencoder import construct_model
     previous_model = construct_model(load=True)
@@ -72,25 +78,44 @@ def start_offline_train():
             SELECT count(*) FROM flow_logs
         ''').fetchone()[0]
 
-        days_available = conn.execute('''
-            SELECT COUNT(DISTINCT date(timestamp)) FROM flow_logs
-            WHERE timestamp < datetime('now', '-24 hours')
-            AND timestamp > datetime('now', '-7 days')
-        ''').fetchone()[0]
-
-        try:
-            rows = conn.execute('''
-                SELECT ae_features FROM flow_logs
-                WHERE rf_category = 0
-                AND timestamp < datetime('now', '-24 hours')
+        if defenses.get('Temporal Isolation', False):
+            days_available = conn.execute('''
+                SELECT COUNT(DISTINCT date(timestamp)) FROM flow_logs
+                WHERE timestamp < datetime('now', '-24 hours')
                 AND timestamp > datetime('now', '-7 days')
-            ''').fetchall()
+            ''').fetchone()[0]
 
-        except:
-            message = 'no eligible samples after filtering (fired from query execution)'
-            log_retrain_event(0, None, None, 0, message)
-            print(message)
-            return
+            try:
+                rows = conn.execute('''
+                    SELECT ae_features FROM flow_logs
+                    WHERE rf_category = 0
+                    AND timestamp < datetime('now', '-24 hours')
+                    AND timestamp > datetime('now', '-7 days')
+                ''').fetchall()
+
+            except:
+                message = 'no eligible samples after filtering (fired from query execution with temporal isolation)'
+                log_retrain_event(0, None, None, 0, message)
+                print(message)
+                return
+        else:
+            days_available = conn.execute('''
+                SELECT COUNT(DISTINCT date(timestamp)) FROM flow_logs
+                WHERE timestamp > datetime('now', '-7 days')
+            ''').fetchone()[0]
+
+            try:
+                rows = conn.execute('''
+                    SELECT ae_features FROM flow_logs
+                    WHERE rf_category = 0
+                    AND timestamp > datetime('now', '-7 days')
+                ''').fetchall()
+
+            except:
+                message = 'no eligible samples after filtering (fired after query execution without temporal isolation)'
+                log_retrain_event(0, None, None, 0, message)
+                print(message)
+                return
 
         if total < FLOW_THRESHOLD:
             message = f'insufficient total flows: {total} < {FLOW_THRESHOLD} (fired from total)'
@@ -125,27 +150,28 @@ def start_offline_train():
             print(message)
             return
 
-        df = pd.DataFrame(records)
-        original_count = len(df)
+        features = pd.DataFrame(records)
 
-        iso_mask = iso_forest_filter(df)
-        features = df[iso_mask]
-        filtered_count = len(features)
+        if defenses.get('Isolation Forest', False):
+            original_count = len(features)
+            iso_mask = iso_forest_filter(features)
+            features = features[iso_mask]
+            filtered_count = len(features)
 
-        print(f'Isolation forest removed {original_count - filtered_count} suspicious flows'
-              f'{(original_count - filtered_count)/original_count:.1%}')
+            print(f'Isolation forest removed {original_count - filtered_count} suspicious flows'
+                  f'{(original_count - filtered_count)/original_count:.1%}')
 
-        if features.empty:
-            message = 'no eligible samples after filtering (fired after isolation forest mask)'
-            log_retrain_event(0, None, None, 0, message)
-            print(message)
-            return
+            if features.empty:
+                message = 'no eligible samples after filtering (fired after isolation forest mask)'
+                log_retrain_event(0, None, None, 0, message)
+                print(message)
+                return
 
-        if filtered_count < FLOW_THRESHOLD:
-            message = 'insufficient total samples (fired after isolation forest mask)'
-            log_retrain_event(0, None, None, 0, message)
-            print(message)
-            return
+            if filtered_count < FLOW_THRESHOLD:
+                message = 'insufficient total samples (fired after isolation forest mask)'
+                log_retrain_event(0, None, None, 0, message)
+                print(message)
+                return
 
         start_time = time.time()
         pre_loss, post_loss = train_model(load=True, features=features)
@@ -381,4 +407,5 @@ def check_drift(alert_engine=None):
     return False
 
 if __name__ == '__main__':
-    start_offline_train()
+    from models.definitions.autoencoder import construct_model
+    recalibrate_ae_thresholds(construct_model(load=True))
