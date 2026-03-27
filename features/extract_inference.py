@@ -1,5 +1,24 @@
 import numpy as np
 
+def is_private(ip_bytes):
+    if ip_bytes is None:
+        return 0
+    if len(ip_bytes) == 4:
+        if ip_bytes[0] == 10:
+            return 1
+        if ip_bytes[0] == 172 and 16 <= ip_bytes[1] <= 31:
+            return 1
+        if ip_bytes[0] == 192 and ip_bytes[1] == 168:
+            return 1
+        if ip_bytes[0] == 127:
+            return 1
+    if len(ip_bytes) == 16:
+        if ip_bytes == b'\x00' * 15 + b'\x01':
+            return 1
+        if ip_bytes[0] & 0xfe == 0xfc:
+            return 1
+    return 0
+
 def extract_features_ae(flow):
     fwd = flow['fwd_packets']
     bwd = flow['bwd_packets']
@@ -38,7 +57,7 @@ def extract_features_ae(flow):
     return features
 
 def extract_features_rf(flow):
-    from features.extract_training import port_category, is_private
+    from features.extract_training import port_category
 
     fwd = flow['fwd_packets']
     bwd = flow['bwd_packets']
@@ -57,7 +76,7 @@ def extract_features_rf(flow):
         'proto_17': 1 if protocol == 17 else 0,
 
         'Port': port_category(flow['dst_port']),
-        # 'IP': is_private(flow['dst_ip']),
+        'IP': is_private(flow['dst_ip']),
         'Duration': duration,
         'In/Out Ratio': fwd / (bwd + 1e-6),
 

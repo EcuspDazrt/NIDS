@@ -64,7 +64,7 @@ def extract_features_rf(df, label="", save_type=None):
     features = pd.concat([features, proto_onehot], axis=1)
 
     features['Port'] = port_category(df['Destination Port'])
-    # features['IP'] = is_private(df['Destination IP'])
+    features['IP'] = is_private(df['Destination IP'])
     features['Duration'] = duration
     features['In/Out Ratio'] = fwd / (bwd + 1e-6)
 

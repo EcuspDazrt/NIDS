@@ -78,6 +78,7 @@ def init_dataframes():
         df = pd.read_csv(path, encoding='latin1', low_memory=False)
         df.columns = df.columns.str.strip()
         all_df = pd.concat([all_df, df], ignore_index=True)
+        all_df = all_df.dropna(subset=['Label'])
 
     from sklearn.model_selection import train_test_split
     train_df, test_df = train_test_split(
