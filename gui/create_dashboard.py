@@ -9,8 +9,12 @@ BASE_DIR = Path(__file__).parent
 
 from gui.app import dashboard_process
 
-def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, flash_event):
+def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, flash_event, defenses, intervals):
     dashboard_proc = [None]  # mutable container so inner functions can modify it
+
+    if defenses is None:
+        defenses = {'Isolation Forest':True, 'Temporal Isolation':True, 'Rollback':True}
+    drift_check_interval, retrain_check_interval, rollback_cooldown = intervals
 
     def open_dashboard(icon, item):
         if dashboard_proc[0] is None or not dashboard_proc[0].is_alive():
@@ -71,21 +75,25 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
             time.sleep(0.4)
 
     def retrain_loop():
-        drift_check_interval = 7200 # 7200; 2 hours
-        retrain_check_interval = 86400 # 86400; 1 day
-        rollback_cooldown = 172800 # 172800; 2 days
         last_rollback_time = None
         last_retrain_check = 0
 
         while True:
+            # wait for the drift check interval
             time.sleep(drift_check_interval)
-            try:
-                from scripts.retrain_ae import check_drift
-                drift_detected = check_drift(alert_engine)
-            except Exception as e:
-                print(f'Drift check failed: {e}')
+
+            # do a drift check if rollback is enabled
+            if defenses.get('Rollback', False):
+                try:
+                    from scripts.retrain_ae import check_drift
+                    drift_detected = check_drift(alert_engine)
+                except Exception as e:
+                    print(f'Drift check failed: {e}')
+                    drift_detected = False
+            else:
                 drift_detected = False
 
+            # retrain the model if there is no drift detected. else, rollback to best model
             now = time.time()
             if now - last_retrain_check >= retrain_check_interval:
                 last_retrain_check = now
@@ -112,7 +120,7 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
                 else:
                     try:
                         from scripts.retrain_ae import try_retrain
-                        try_retrain()
+                        try_retrain(defenses=defenses)
                     except Exception as e:
                         print(f'Retraining check failed: {e}')
 

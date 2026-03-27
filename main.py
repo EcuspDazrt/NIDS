@@ -18,8 +18,11 @@ from inference.inference import inference_process
 from gui.create_dashboard import create_tray_icon
 from alerts.alert_engine import AlertEngine
 
+# Crucial thresholds and parameters. Check retrain_ae.py for more
 RF_THRESHOLD = 2
 AE_THRESHOLD = 2
+DEFENSES = {'Isolation Forest':True, 'Temporal Isolation':True, 'Rollback':True}
+INTERVALS = [7200, 86400, 172800] # drift check interval, retrain interval, drift cooldown - currently 2 hours, 1 day, and 2 days respectively
 
 def register_app_id():
     if sys.platform == 'win32':
@@ -50,7 +53,7 @@ if __name__ == "__main__":
 
     alert_engine = AlertEngine(RF_THRESHOLD, AE_THRESHOLD, results_queue, flash_event)
 
-    capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'live_capture', interface))
+    capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'simulation', interface))
     inference = Process(target=inference_process, args=(flow_queue, results_queue, models_ready, alert_engine))
 
     capture.daemon = True
@@ -68,4 +71,4 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, flash_event)
+    create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, flash_event, DEFENSES, INTERVALS)
