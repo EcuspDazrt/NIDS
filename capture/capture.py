@@ -4,6 +4,9 @@ import sys
 import time
 import hashlib
 
+from pathlib import Path
+BASE_DIR = Path(__file__).parent
+
 IPV6_EXT_HEADERS = {
             0,  # Hop-by-Hop Options
             43,  # Routing
@@ -277,7 +280,7 @@ def make_canonical(flow_id):
 
     return dst_ip, src_ip, dst_port, src_port, proto
 
-def capture_process(queue, stop_capture, interface_type, interface=None): # other type is live-capture
+def capture_process(queue, stop_capture, interface_type, interface=None, pcap_file=None): # other type is live-capture
     flow_state = {}  # 6 tuple - flow dicts (flow_key: state)
     epoch_counters = {} # (traditional 5 tuple: epoch id)
     last_sweep = None
@@ -301,7 +304,18 @@ def capture_process(queue, stop_capture, interface_type, interface=None): # othe
     libpcap.pcap_next_ex.restype = ctypes.c_int
 
     if interface_type == 'simulation':
-        handle = libpcap.pcap_open_offline(b'C:/Users/London/Documents/GitHub/NIDS/datasets/raw/pcaps/FIRST-2015_Hands-on_Network_Forensics_PCAP/2015-03-05/snort.log.1425572414', error_buffer)
+        if pcap_file:
+            try:
+                handle = libpcap.pcap_open_offline(pcap_file, error_buffer)
+            except FileNotFoundError:
+                print(f'Pcap file not found: {str(pcap_file.decode())}')
+                return
+            except Exception as e:
+                print(f'Error opening pcap file: {e}')
+                return
+        else:
+            PCAP_PATH = BASE_DIR.parent / 'datasets' / 'raw' / 'pcaps' / 'FIRST-2015_Hands-on_Network_Forensics_PCAP' / '2015-03-05' / 'snort.log.1425565276'
+            handle = libpcap.pcap_open_offline(str(PCAP_PATH).encode(), error_buffer)
     elif interface_type == 'live-capture':
         handle = libpcap.pcap_open_live(interface, snap_len, promiscuous, read_timeout, error_buffer)
     else:
