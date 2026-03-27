@@ -1,7 +1,7 @@
 # ADR-011: Feature Selection
 
 **Date:** 2026-03-09
-**Status:** Accepted / Superseded by ADR-00X / Deprecated
+**Status:** Accepted
 
 ## Context
 - In order for each of the models to achieve the greatest precision and recall metrics possible, the features must be carefully selected with large significance in the model's decision.

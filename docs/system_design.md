@@ -129,5 +129,3 @@ this is the primary constraint motivating the planned multiprocess architecture.
   - MAC flooding
 ### 6.8 The system will be Low-and-slow blind
   - Attacks that mimic benign flow statistics (similar to payload blind)
-### 6.9 The system currently has the network type feature disabled
-  - This is due to development constraints and will be enabled for the final version
