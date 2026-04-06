@@ -19,7 +19,7 @@ def is_private(ip_bytes):
             return 1
     return 0
 
-def extract_features_ae(flow):
+def extract_features_ae(flow, experiment=False):
     fwd = flow['fwd_packets']
     bwd = flow['bwd_packets']
     duration = flow['last_seen'] - flow['start_time']
@@ -52,11 +52,19 @@ def extract_features_ae(flow):
         "Active Std": np.log1p(flow['active_stats'].std),
         "Idle Mean": np.log1p(flow['idle_stats'].mean),
         "Idle Std": np.log1p(flow['idle_stats'].std),
-    }
+        }
+
+    if experiment:
+        features['Source IP'] = flow['src_ip']
+        features['Destination IP'] = flow['dst_ip']
+        features['Source Port'] = flow['src_port']
+        features['Destination Port'] = flow['dst_port']
+        features['Start time'] = flow['start_time']
+        features['Last time'] = flow['last_seen']
 
     return features
 
-def extract_features_rf(flow):
+def extract_features_rf(flow, experiment=False):
     from features.extract_training import port_category
 
     fwd = flow['fwd_packets']
@@ -154,5 +162,13 @@ def extract_features_rf(flow):
         'Fin/Ack Ratio': fin / (ack + 1e-6),
         'Rst/Syn Ratio': rst / (syn + 1e-6),
     }
+
+    if experiment:
+        features['Source IP'] = flow['src_ip']
+        features['Destination IP'] = flow['dst_ip']
+        features['Source Port'] = flow['src_port']
+        features['Destination Port'] = flow['dst_port']
+        features['Start time'] = flow['start_time']
+        features['Last time'] = flow['last_seen']
 
     return features

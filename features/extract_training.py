@@ -33,7 +33,7 @@ def port_category(port_series):
         labels=[0, 1, 2]
     ).astype(int)
 
-def extract_features_rf(df, label="", save_type=None):
+def extract_features_rf(df, label="", save_type=None, experiment=False):
     df.columns = df.columns.str.strip()
 
     # df = df.dropna(how='all')  # drop rows where every column is null
@@ -153,6 +153,9 @@ def extract_features_rf(df, label="", save_type=None):
     features = features.clip(-1e6, 1e6)
     features = features.astype(np.float32)
 
+    if experiment:
+        features['Label'] = df['Label']
+
     if save_type == 'export':
         if 'Label' in df.columns:
             binary_labels = (df['Label'] != 'BENIGN').astype(int)
@@ -166,7 +169,7 @@ def extract_features_rf(df, label="", save_type=None):
     return features
 
 
-def extract_features_ae(df, label="", save_type=None):
+def extract_features_ae(df, label="", save_type=None, experiment=False):
     df.columns = df.columns.str.strip()
 
     # df = df.dropna(how='all')  # drop rows where every column is null
@@ -211,6 +214,9 @@ def extract_features_ae(df, label="", save_type=None):
     features = features.fillna(0)
     features = features.clip(-1e6, 1e6)
     features = features.astype(np.float32)
+
+    if experiment:
+        features['Label'] = df['Label']
 
     if save_type == 'export':
         features.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'ae_{label}.csv', index=False)
