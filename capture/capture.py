@@ -36,6 +36,12 @@ GREASE_VALUES = {
     0xcaca, 0xdada, 0xeaea, 0xfafa
 }
 
+DLT_EN10MB   = 1
+DLT_NULL     = 0
+DLT_LINUX_SLL = 113
+DLT_RAW      = 12
+DLT_RAW_ALT  = 101  # Some systems use 101 for raw IP
+
 class PcapPacketHeader(ctypes.Structure):
     _fields_ = [
         ('tv_sec', ctypes.c_long), # time value in seconds
@@ -80,8 +86,34 @@ class RunningStats:
         return self.minimum if self.n > 0 else 0.0
 
 
-def parse_ipv4(ipv4_bytes):
-    ip_start = 14
+def get_ethertype_and_ip_start(raw_bytes, link_type):
+    if link_type == DLT_EN10MB:
+        ethertype = int.from_bytes(raw_bytes[12:14], 'big')
+        ip_start = 14
+    elif link_type == DLT_NULL:
+        family = int.from_bytes(raw_bytes[0:4], 'little')
+        if family == 2:
+            ethertype = ETHERTYPE_IPV4
+        elif family in (24, 28, 30):
+            ethertype = ETHERTYPE_IPV6
+        else:
+            return None, None
+        ip_start = 4
+    elif link_type == DLT_LINUX_SLL:
+        ethertype = int.from_bytes(raw_bytes[14:16], 'big')
+        ip_start = 16
+    elif link_type in (DLT_RAW, DLT_RAW_ALT):
+        version = (raw_bytes[0] >> 4)
+        if version == 4:
+            ethertype = ETHERTYPE_IPV4
+        elif version == 6:
+            ethertype = ETHERTYPE_IPV6
+        else:
+            return None, None
+
+    return ethertype, ip_start
+
+def parse_ipv4(ipv4_bytes, ip_start=14):
     ip_header_len = (ipv4_bytes[ip_start] & 0x0F) * 4
 
     protocol = ipv4_bytes[ip_start + 9]  # 6 will be TCP and 17 will be UDP
@@ -102,14 +134,12 @@ def parse_ipv4(ipv4_bytes):
 
     return source_ip, destination_ip, source_port, destination_port, protocol, transport_start, mf_flag
 
-def parse_ipv6(ipv6_bytes):
-    ipv6_start = 14
+def parse_ipv6(ipv6_bytes, ip_start=14):
+    source_ip = ipv6_bytes[ip_start + 8:ip_start + 24]
+    destination_ip = ipv6_bytes[ip_start + 24:ip_start + 40]
+    next_header = ipv6_bytes[ip_start + 6]
 
-    source_ip = ipv6_bytes[ipv6_start + 8:ipv6_start + 24]
-    destination_ip = ipv6_bytes[ipv6_start + 24:ipv6_start + 40]
-    next_header = ipv6_bytes[ipv6_start + 6]
-
-    offset = ipv6_start + 40
+    offset = ip_start + 40
 
     while next_header in IPV6_EXT_HEADERS:
         if offset >= len(ipv6_bytes):
@@ -325,6 +355,9 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
         raise RuntimeError(f'Failed to open pcap: {error_buffer.value.decode()}')
     handle = ctypes.c_void_p(handle)
 
+    libpcap.pcap_datalink.restype = ctypes.c_int
+    link_type = libpcap.pcap_datalink(handle)
+
     header = ctypes.POINTER(PcapPacketHeader)()
     data = ctypes.POINTER(ctypes.c_ubyte)()
 
@@ -341,20 +374,20 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
             break
 
         raw_bytes = bytes(data[:header[0].capture_len])
-        ethertype = int.from_bytes(raw_bytes[12:14], byteorder='big')
+        ethertype, ip_start = get_ethertype_and_ip_start(raw_bytes, link_type)
 
         if ethertype != ETHERTYPE_IPV4 and ethertype != ETHERTYPE_IPV6:
             continue
 
         if ethertype == ETHERTYPE_IPV4:
-            result = parse_ipv4(raw_bytes)
+            result = parse_ipv4(raw_bytes, ip_start)
             if result is None:
                 continue
             source_ip, destination_ip, source_port, destination_port, protocol, transport_start, mf_flag = result
             # may not use mf_flag right now, but when it is one, it will indicate it is the start of a fragment
 
         if ethertype == ETHERTYPE_IPV6:
-            result = parse_ipv6(raw_bytes)
+            result = parse_ipv6(raw_bytes, ip_start)
             if result is None:
                 continue
             source_ip, destination_ip, source_port, destination_port, protocol, transport_start = result
