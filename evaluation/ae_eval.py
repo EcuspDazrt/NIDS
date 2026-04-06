@@ -93,13 +93,13 @@ def evaluate_model(manual_eval=False, return_eval=False, construction='', featur
 
 if __name__ == '__main__':
     eval = evaluate_model(
-        manual_eval=True,
+        manual_eval=False,
         return_eval=True,
         construction='20_32_16_8',
-        features_benign_path=r'C:\Users\lmcau619\Documents\GitHub\NIDS\experiments\final_ae_features.csv',
-        features_malicious_path=r'C:\Users\lmcau619\Documents\GitHub\NIDS\experiments\final_ae_features.csv',
+        features_benign_path=r"C:\Users\London\Documents\GitHub\NIDS\experiments\csv's\final_ae_features.csv",
+        features_malicious_path=r"C:\Users\London\Documents\GitHub\NIDS\experiments\csv's\final_ae_features.csv",
     )
     if eval is not None:
         y_pred, binary_predictions, categorical_eval = eval
-        print(classification_report(y_pred, binary_predictions))
+        print(classification_report(y_pred, binary_predictions, output_dict=True))
         print(categorical_eval)
