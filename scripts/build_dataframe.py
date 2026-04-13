@@ -3,14 +3,14 @@ import pandas as pd
 
 # initialize training and eval raw datasets
 BASE_DIR = Path(__file__).parent
-all_paths = [BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Friday-WorkingHours-Morning.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Tuesday-WorkingHours.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Wednesday-workingHours.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'raw'/'CICIDS2017'/'Monday-WorkingHours.pcap_ISCX.csv']
+all_paths = [BASE_DIR.parent/'datasets'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Friday-WorkingHours-Morning.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Tuesday-WorkingHours.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Wednesday-workingHours.pcap_ISCX.csv',
+             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Monday-WorkingHours.pcap_ISCX.csv']
 
 def drop(df, handle_benign):
     df.columns = df.columns.str.strip()
