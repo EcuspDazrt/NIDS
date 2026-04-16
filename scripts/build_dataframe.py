@@ -58,14 +58,6 @@ def drop(df, handle_benign):
     # 'FIN Flag Count', 'RST Flag Count',
     # 'Flow IAT Std', 'Packet Length Std'
 
-def create_dataframe(paths, label, handle_benign=None):
-    df = pd.DataFrame()
-
-    for path in paths:
-        df = pd.concat([df, drop(pd.read_csv(path, encoding='latin1', low_memory=False), handle_benign=handle_benign)], ignore_index=True)
-
-    df.to_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/f'CICIDS2017_{label}.csv', index=False)
-
 def init_dataframes():
     print('Initializing dataframes...')
 
