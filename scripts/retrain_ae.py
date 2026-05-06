@@ -81,7 +81,7 @@ def get_rows(temp_iso, conn, flow_ids=None):
         query = f'''
             SELECT ae_features FROM flow_logs
             WHERE rf_category = 0
-            AND timestamp < datetime('now', '-7 days)
+            AND timestamp < datetime('now', '-7 days')
             {id_filter}
         '''
 
@@ -245,30 +245,29 @@ def recalibrate_ae_thresholds(ae):
     print(f'Recalibrated AE max: {ae_max:.4f}')
 
 
-def evaluate_retrained_model(model):
-    from scripts.build_dataset import create_dataset
+def evaluate_retrained_model(model, validation_path=None):
+    if validation_path is not None:
+        df = pd.read_csv(validation_path)
+    else:
+        with sqlite3.connect(FLOW_DB_PATH) as conn:
+            rows = conn.execute('''
+                SELECT ae_features FROM flow_logs
+                WHERE rf_category = 0
+                AND ae_features IS NOT NULL
+                AND timestamp > datetime('now', '-24 hours')
+                LIMIT 500
+            ''').fetchall()
 
-    with sqlite3.connect(FLOW_DB_PATH) as conn:
-        rows = conn.execute('''
-            SELECT ae_features FROM flow_logs
-            WHERE rf_category = 0
-            AND ae_features IS NOT NULL
-            AND timestamp > datetime('now', '-24 hours')
-            LIMIT 500
-        ''').fetchall()
+        if not rows:
+            return None
+        records = []
+        build_records(rows, records)
+        if len(records) < 50:
+            return None
 
-    if not rows:
-        return None
+        df = pd.DataFrame(records)
 
-    records = []
-    build_records(rows, records)
-
-    if len(records) < 50:
-        return None
-
-    df = pd.DataFrame(records)
     x = create_dataset(df, loader=False)
-
     model.eval()
     error = get_error(model, x)
 
@@ -301,19 +300,20 @@ def try_retrain(defenses=None):
         else:
             print('Ineligible for retraining')
 
-def start_offline_train(defenses=None, flow_ids=None):
+def start_offline_train(defenses=None, flow_ids=None, validation_path=None):
     if defenses is None:
         defenses = {'Isolation Forest':True, 'Temporal Isolation':True, 'Rollback':True}
+    temp_iso = defenses.get('Temporal Isolation', False)
+    iso_forest = defenses.get('Isolation Forest', False)
+    rollback = defenses.get('Rollback', False)
 
     # loading previous model and calculating initial normal fraction first
     previous_model = construct_model(load=True)
-    normal_fraction = evaluate_retrained_model(previous_model)
+    normal_fraction = evaluate_retrained_model(previous_model, validation_path=validation_path)
     ae_thresholds = get_thresholds()
 
     # attempt model retraining
     with sqlite3.connect(FLOW_DB_PATH) as conn:
-        temp_iso = defenses.get('Temporal Isolation', False)
-
         total = get_total(conn)
         days_available = get_days_available(temp_iso, conn)
         rows = get_rows(temp_iso, conn, flow_ids=flow_ids)
@@ -322,7 +322,7 @@ def start_offline_train(defenses=None, flow_ids=None):
     time_err = check_time_window(days_available)
 
     if rows is None or threshold_err is None or time_err is None:
-        return
+        return None
 
     records = []
     build_records(rows, records)
@@ -332,17 +332,17 @@ def start_offline_train(defenses=None, flow_ids=None):
     threshold_err = check_flow_threshold(sample_count=sample_count)
 
     if records_err is None or threshold_err is None:
-        return
+        return None
 
     features = pd.DataFrame(records)
 
-    if temp_iso:
+    if iso_forest:
         features, filtered_count = filter_features(features)
         iso_err = check_features(features)
         threshold_err = check_flow_threshold(filtered_count=filtered_count)
 
         if iso_err is None or threshold_err is None:
-            return
+            return None
 
     start_time = time.time()
     pre_loss, post_loss = train_model(load=True, features=features)
@@ -354,12 +354,72 @@ def start_offline_train(defenses=None, flow_ids=None):
     save_backup_with_metadata(previous_model, pre_loss, post_loss, normal_fraction, ae_thresholds)
 
     new_model = construct_model(load=True)
+
+    # only runs with experimentation, will not do anything in the regular system
+    retrained_normal_fraction = None # default to none, modify in experiment gate
+    if validation_path and rollback:
+        retrained_normal_fraction = evaluate_retrained_model(new_model, validation_path=validation_path)
+
+    # always runs
     recalibrate_ae_thresholds(new_model)
 
+    # experiment only
+    if validation_path and rollback:
+        normal_fractions = {'Initial normal': normal_fraction, 'Retrained normal': retrained_normal_fraction}
 
+        drifted = check_drift(normal_fractions=normal_fractions)
+        rolled_back = False
+
+        if drifted:
+            rolled_back = rollback_ae()
+
+        return drifted, rolled_back
+    return None
 
 
 # ------- Functions handling rollback and drift monitoring -------
+
+# this function continues with the logic being that if the model is poisoned, under standard traffic, the extent to which the normal
+def check_drift(alert_engine=None, normal_fractions=None):
+    if normal_fractions is not None:
+        historical_normal = normal_fractions.get('Initial normal', 0)
+        recent_normal = normal_fractions.get('Retrained normal', 0)
+    else:
+        with sqlite3.connect(FLOW_DB_PATH) as conn:
+            recent, historical = get_drift_rows(conn)
+
+        if not recent or not historical:
+            print('Skipped drift check: No recent or historical data found')
+            return False
+
+        recent_fracs = tier_fractions(recent)
+        historical_fracs = tier_fractions(historical)
+
+        # get the category in which the auto-encoder did NOT detect it as malicious whatsoever
+        recent_normal = recent_fracs.get(0, 0.0)
+        historical_normal = historical_fracs.get(0, 0.0)
+
+    entry = {
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'event': 'drift_check',
+        'recent_normal_fraction': round(recent_normal, 3),
+        'historical_normal_fraction': round(historical_normal, 3),
+        'drift_detected': False,
+        'reason': None
+    }
+
+    populate_entry(entry, recent_normal, historical_normal)
+
+    with open(DRIFT_LOG_PATH, 'a') as f:
+        f.write(json.dumps(entry) + '\n')
+
+    if entry['drift_detected']:
+        if alert_engine:
+            alert_engine.signal_drift(entry['reason'])
+        print(f'drift detected: {entry["reason"]}')
+        return True
+    return False
+
 def rollback_ae(): # returns whether the rollback was successful
     artifacts = BASE_DIR.parent / 'models' / 'artifacts'
     backups_dir = artifacts / 'retraining_backups'
@@ -461,41 +521,6 @@ def populate_entry(entry, recent_normal, historical_normal):
             f'normal tier dropped {(historical_normal - recent_normal):.1%} '
             f'below historical average ({historical_normal:.1%} -> {recent_normal:.1%})'
         )
-
-def check_drift(alert_engine=None):
-    with sqlite3.connect(FLOW_DB_PATH) as conn:
-        recent, historical = get_drift_rows(conn)
-
-    if not recent or not historical:
-        print('Skipped drift check: No recent or historical data found')
-        return False
-
-    recent_fracs = tier_fractions(recent)
-    historical_fracs = tier_fractions(historical)
-
-    recent_normal = recent_fracs.get(0, 0.0)
-    historical_normal = historical_fracs.get(0, 0.0)
-
-    entry = {
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'event': 'drift_check',
-        'recent_normal_fraction': round(recent_normal, 3),
-        'historical_normal_fraction': round(historical_normal, 3),
-        'drift_detected': False,
-        'reason': None
-    }
-
-    populate_entry(entry, recent_normal, historical_normal)
-
-    with open(DRIFT_LOG_PATH, 'a') as f:
-        f.write(json.dumps(entry) + '\n')
-
-    if entry['drift_detected']:
-        if alert_engine:
-            alert_engine.signal_drift(entry['reason'])
-        print(f'drift detected: {entry["reason"]}')
-        return True
-    return False
 
 if __name__ == '__main__':
     recalibrate_ae_thresholds(construct_model(load=True))

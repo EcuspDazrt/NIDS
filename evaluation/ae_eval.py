@@ -12,7 +12,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 
 benign_testing_path = BASE_DIR.parent / 'datasets' / 'processed' / 'ae_testing_benign.csv'
-malicious_testing_path = BASE_DIR.parent / 'datasets' / 'processed' / 'ae_testing_benign.csv'
+malicious_testing_path = BASE_DIR.parent / 'datasets' / 'processed' / 'ae_testing_malicious.csv'
 
 thresholds_path = BASE_DIR.parent / 'models' / 'artifacts' / 'thresholds.json'
 artifacts_path =  BASE_DIR.parent / 'models' / 'artifacts'
@@ -51,7 +51,7 @@ def get_features(features_benign_path, features_malicious_path):
 def get_error(ae=None, x=None):
     with torch.no_grad():
         recon = ae(x)
-        error = ((x - recon) ** 2).mean(dim=1)
+        error = ((x - recon) ** 2).mean(dim=1).numpy()
 
     return error
 
@@ -102,7 +102,7 @@ def run_eval(ae=None, features_benign_path=None, features_malicious_path=None, r
 def evaluate_model(manual_eval=False, return_eval=False, construction='', features_benign_path=None, features_malicious_path=None):
     check_dataset()
 
-    construction_layers = [int(x) for x in construction.split('_')]
+    construction_layers = [int(x) for x in construction.split('_')] if construction else [20, 32, 16, 8]
     l1, l2, l3 = construction_layers[1:]
 
     if manual_eval:
@@ -130,7 +130,6 @@ if __name__ == '__main__':
     eval = evaluate_model(
         manual_eval=False,
         return_eval=True,
-        construction='20_32_16_8',
         features_benign_path=r"C:\Users\London\Documents\GitHub\NIDS\experiments\csv's\final_ae_features.csv",
         features_malicious_path=r"C:\Users\London\Documents\GitHub\NIDS\experiments\csv's\final_ae_features.csv",
     )

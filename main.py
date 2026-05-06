@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
     alert_engine = AlertEngine(RF_THRESHOLD, AE_THRESHOLD, results_queue, flash_event)
 
-    capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'simulation', interface))
+    capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'live-capture', interface))
     inference = Process(target=inference_process, args=(flow_queue, results_queue, models_ready, alert_engine))
 
     capture.daemon = True
