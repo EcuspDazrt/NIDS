@@ -1,13 +1,13 @@
 from multiprocessing import Process
-import pystray
 from PIL import Image, ImageDraw
-import threading
-import time
+import threading, pystray, time
+import util.paths as p
 
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
-
+from retraining.drift_check import check_drift, try_rollback
+from retraining.retrain_ae import log_retrain_event, start_offline_train
 from gui.app import dashboard_process
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
 def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, flash_event, defenses, intervals):
     dashboard_proc = [None]  # mutable container so inner functions can modify it
@@ -85,10 +85,10 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
             # do a drift check if rollback is enabled
             if defenses.get('Rollback', False):
                 try:
-                    from scripts.retrain_ae import check_drift
+
                     drift_detected = check_drift(alert_engine)
-                except Exception as e:
-                    print(f'Drift check failed: {e}')
+                except Exception:
+                    LOGGER.exception(f'Drift check failed')
                     drift_detected = False
             else:
                 drift_detected = False
@@ -98,7 +98,6 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
             if now - last_retrain_check >= retrain_check_interval:
                 last_retrain_check = now
                 if drift_detected:
-                    from scripts.retrain_ae import log_retrain_event, rollback_ae
                     message = 'skipped: drift detected, training date may be contaminated'
                     log_retrain_event(0, None, None, 0, message)
 
@@ -107,7 +106,7 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
                         log_retrain_event(0, None, None, 0, message)
                         continue
 
-                    success = rollback_ae()
+                    success = try_rollback()
                     last_rollback_time = time.time()
                     if success:
                         message = 'rolled back: drift detected in current model'
@@ -119,17 +118,16 @@ def create_tray_icon(results_queue, stop_capture, models_ready, alert_engine, fl
                         log_retrain_event(0, None, None, 0, message)
                 else:
                     try:
-                        from scripts.retrain_ae import try_retrain
-                        try_retrain(defenses=defenses)
-                    except Exception as e:
-                        print(f'Retraining check failed: {e}')
+                        start_offline_train(defenses=defenses)
+                    except Exception:
+                        LOGGER.exception('Retraining check failed')
 
     menu = pystray.Menu(
         pystray.MenuItem('Open Dashboard', open_dashboard, default=True),
         pystray.MenuItem('Stop NIDS', stop_system)
     )
 
-    icon_img = Image.open(BASE_DIR.parent/'gui'/'resources'/'nids_icon.ico').resize((256, 256))
+    icon_img = Image.open(p.ICON_BITMAP_PATH).resize((256, 256))
     icon = pystray.Icon(
         'NIDS',
         make_icon(icon_img, (184, 148, 42)),

@@ -1,16 +1,10 @@
-from pathlib import Path
 import pandas as pd
+import util.paths as p
 
-# initialize training and eval raw datasets
-BASE_DIR = Path(__file__).parent
-all_paths = [BASE_DIR.parent/'datasets'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Friday-WorkingHours-Morning.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Tuesday-WorkingHours.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Wednesday-workingHours.pcap_ISCX.csv',
-             BASE_DIR.parent/'datasets'/'CICIDS2017'/'Monday-WorkingHours.pcap_ISCX.csv']
+from sklearn.model_selection import train_test_split
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
+
 
 def drop(df, handle_benign):
     df.columns = df.columns.str.strip()
@@ -59,31 +53,28 @@ def drop(df, handle_benign):
     # 'Flow IAT Std', 'Packet Length Std'
 
 def init_dataframes():
-    print('Initializing dataframes...')
-
-    if not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated').exists():
-        import os
-        os.mkdir(BASE_DIR.parent/'datasets'/'raw'/'Aggregated')
+    LOGGER.info('Dataframes began initialization')
 
     all_df = pd.DataFrame()
-    for path in all_paths:
+    for path in p.RAW_CICIDS_PATHS:
         df = pd.read_csv(path, encoding='latin1', low_memory=False)
         df.columns = df.columns.str.strip()
         all_df = pd.concat([all_df, df], ignore_index=True)
         all_df = all_df.dropna(subset=['Label'])
 
-    from sklearn.model_selection import train_test_split
     train_df, test_df = train_test_split(
         all_df,
         test_size=0.3,
         stratify=all_df['Label'],
         random_state=42)
 
-    train_df[train_df['Label'] == 'BENIGN'].drop('Label', axis=1).to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_ae_training.csv', index=False)
-    test_df[test_df['Label'] == 'BENIGN'].drop('Label', axis=1).to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_ae_testing_benign.csv', index=False)
-    test_df[test_df['Label'] != 'BENIGN'].drop('Label', axis=1).to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_ae_testing_malicious.csv',index=False)
-    train_df.to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_rf_training.csv', index=False)
-    test_df.to_csv(BASE_DIR.parent / 'datasets' / 'raw' / 'Aggregated/CICIDS2017_rf_testing.csv', index=False)
+    train_df[train_df['Label'] == 'BENIGN'].drop('Label', axis=1).to_csv(p.RAW_AE_TRAIN_PATH, index=False)
+    test_df[test_df['Label'] == 'BENIGN'].drop('Label', axis=1).to_csv(p.RAW_AE_TEST_BENIGN_PATH, index=False)
+    test_df[test_df['Label'] != 'BENIGN'].drop('Label', axis=1).to_csv(p.RAW_AE_TEST_MALICIOUS_PATH,index=False)
+    train_df.to_csv(p.RAW_RF_TRAIN_PATH, index=False)
+    test_df.to_csv(p.RAW_RF_TEST_PATH, index=False)
+
+    LOGGER.info('Dataframes finished initialization')
 
 if __name__ == '__main__':
     init_dataframes()

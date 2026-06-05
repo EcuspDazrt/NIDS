@@ -3,3 +3,7 @@ backups
 CICIDS2017*
 artifacts
 data
+experiments
+*.iml
+*.xml
+*.pyc

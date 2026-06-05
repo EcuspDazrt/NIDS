@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
+import util.paths as p
 
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
 def is_private(ip_series):
     return (
@@ -41,7 +42,7 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
 
     null_counts = df.isnull().sum()
     if null_counts.any():
-        print(f"Warning: null values in source data:\n{null_counts[null_counts > 0]}")
+        LOGGER.warning(f"Null values in source data:\n{null_counts[null_counts > 0]}")
 
     features = pd.DataFrame()
 
@@ -159,11 +160,11 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
     if save_type == 'export':
         if 'Label' in df.columns:
             binary_labels = (df['Label'] != 'BENIGN').astype(int)
-            binary_labels.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_labels_{label}.csv', index=False)
+            binary_labels.to_csv(p.DATASETS_DIR/'processed'/f'rf_labels_{label}.csv', index=False)
 
-            df['Label'].to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_categories_{label}.csv', index=False)
+            df['Label'].to_csv(p.DATASETS_DIR/'processed'/f'rf_categories_{label}.csv', index=False)
 
-        features.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'rf_{label}.csv', index=False)
+        features.to_csv(p.DATASETS_DIR/'processed'/f'rf_{label}.csv', index=False)
         return None
 
     return features
@@ -177,7 +178,7 @@ def extract_features_ae(df, label="", save_type=None, experiment=False):
 
     null_counts = df.isnull().sum()
     if null_counts.any():
-        print(f"Warning: null values in source data:\n{null_counts[null_counts > 0]}")
+        LOGGER.warning('Null values in source data:\n{null_counts[null_counts > 0]}')
 
     features = pd.DataFrame()
 
@@ -219,38 +220,32 @@ def extract_features_ae(df, label="", save_type=None, experiment=False):
         features['Label'] = df['Label']
 
     if save_type == 'export':
-        features.to_csv(BASE_DIR.parent/'datasets'/'processed'/f'ae_{label}.csv', index=False)
+        features.to_csv(p.DATASETS_DIR/'processed'/f'ae_{label}.csv', index=False)
         return None
 
     return features
 
 def process_raw_dataset():
-    if not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_training.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_training.csv').exists()\
-    or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_testing_malicious.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_training.csv').exists()\
-    or not Path(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_testing.csv').exists():
-        from scripts.build_dataframe import init_dataframes
-        init_dataframes()
+    LOGGER.info('Dataset started processing')
+    if not p.raw_dataset_exists():
+        return
 
-    if not Path(BASE_DIR.parent/'datasets'/'processed').exists():
-        import os
-        os.mkdir(BASE_DIR.parent/'datasets'/'processed')
-
-    print('Processing dataset...')
-
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_training.csv', low_memory=False)
+    df = pd.read_csv(p.RAW_AE_TRAIN_PATH, low_memory=False)
     extract_features_ae(df, 'training', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_testing_benign.csv', low_memory=False)
+    df = pd.read_csv(p.RAW_AE_TEST_BENIGN_PATH, low_memory=False)
     extract_features_ae(df, 'testing_benign', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_ae_testing_malicious.csv', low_memory=False)
+    df = pd.read_csv(p.RAW_AE_TEST_MALICIOUS_PATH, low_memory=False)
     extract_features_ae(df, 'testing_malicious', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_training.csv', low_memory=False)
+    df = pd.read_csv(p.RAW_RF_TRAIN_PATH, low_memory=False)
     extract_features_rf(df, 'training', save_type='export')
 
-    df = pd.read_csv(BASE_DIR.parent/'datasets'/'raw'/'Aggregated'/'CICIDS2017_rf_testing.csv', low_memory=False)
+    df = pd.read_csv(p.RAW_RF_TEST_PATH, low_memory=False)
     extract_features_rf(df, 'testing', save_type='export')
+
+    LOGGER.info('Dataset finished processing')
 
 if __name__ == '__main__':
     process_raw_dataset()

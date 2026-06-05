@@ -1,6 +1,8 @@
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from alerts.logger import ip_to_str
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
 class AlertEngine:
     def __init__(self, rf_threshold, ae_threshold, results_queue, flash_event=None):
@@ -118,5 +120,5 @@ class AlertEngine:
             send_system_notification(alert)
         try:
             self.results_queue.put({'type':'alert','payload':alert})
-        except Exception as e:
-            print(f'Error when queueing alert: {e}')
+        except Exception:
+            LOGGER.exception('Unable to queue alert')

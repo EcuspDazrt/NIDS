@@ -1,9 +1,8 @@
 import customtkinter as ctk
+import util.paths as p
+import sqlite3
 from collections import deque
 from datetime import datetime
-
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -92,7 +91,7 @@ class App(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color=BG)
         self._build_ui()
-        self.iconbitmap(str(BASE_DIR.parent / 'gui' / 'resources' / 'nids_icon.ico'))
+        self.iconbitmap(str(p.ICON_BITMAP_PATH))
 
         # auto-start: if models already ready, go live immediately
         # if still loading, poll until ready then go live automatically
@@ -275,15 +274,12 @@ class App(ctk.CTk):
             self._display_update(self._last_ae_percent, self._last_ae_category, self._last_rf_level)
 
     def _load_history(self):
-        import sqlite3
-
-        db_path = Path(__file__).parent.parent/ 'data' / 'nids_flows.db'
-        if not db_path.exists():
+        if not p.FLOW_DB_PATH.exists():
             self._last_rf_level = None
             return
 
         try:
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(p.FLOW_DB_PATH) as conn:
                 conn.row_factory = sqlite3.Row
 
                 rows = conn.execute('''

@@ -1,21 +1,18 @@
-import json
 import pandas as pd
 import numpy as np
+import util.paths as p
 import torch
-from datetime import datetime, timezone
 
+from datetime import datetime, timezone
+from util.thresholds import get_thresholds
 from models.definitions.autoencoder import construct_model as construct_ae
 from models.definitions.random_forest import construct_model as construct_rf
 from scripts.build_dataset import create_dataset
 
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
-
 def load_ja3_blocklist():
-    blocklist_path = Path(__file__).parent.parent / 'models' / 'artifacts' / 'ja3_blocklist.txt'
-    if not blocklist_path.exists():
+    if not p.BLOCKLIST_PATH.exists():
         return set()
-    with open(blocklist_path) as f:
+    with open(p.BLOCKLIST_PATH) as f:
         return set(line.strip() for line in f if line.strip() and not line.startswith('#'))
 
 MALICIOUS_JA3 = load_ja3_blocklist()
@@ -26,7 +23,10 @@ def ja3_is_malicious(ja3_hash):
     return ja3_hash in MALICIOUS_JA3
 
 def categorize_risk(scores, thresholds):
-    t1, t2, t3 = thresholds
+    if len(thresholds) == 4:
+        t1, t2, t3, _ = thresholds
+    else:
+        t1, t2, t3 = thresholds
     scores = scores.detach().numpy() if torch.is_tensor(scores) else np.array(scores)  # ensure it's a NumPy array
     categories = np.zeros_like(scores, dtype=int)
 
@@ -69,27 +69,21 @@ def infer(ae, rf, ae_features, rf_features, ae_thresholds, max_ae_threshold, rf_
 def inference_process(flow_queue, results_queue, models_ready=None, alert_engine=None):
     from features.extract_inference import extract_features_ae as extract_ae, extract_features_rf as extract_rf
     from alerts.logger import init_db, log_flow
-
     init_db()
+
+    if not p.artifacts_exist():
+        raise Exception('[CRITICAL] Artifacts do not exist or were unable to be created.')
+    models_ready.set()
 
     ae = construct_ae(load=True)
     ae.eval()
     rf = construct_rf()
     rf.n_jobs = 1
 
-    if not Path(BASE_DIR.parent/'models'/'artifacts'/'thresholds.json').exists():
-        from scripts.calibrate_thresholds import calibrate_thresholds
-        calibrate_thresholds()
-
-    with open(BASE_DIR.parent/'models'/'artifacts'/'thresholds.json') as f:
-        t = json.load(f)
-
-    ae_thresholds = t['ae']
-    max_ae_threshold = t['ae_max']
-    rf_thresholds = t['rf']
-
-    if models_ready:
-        models_ready.set()
+    thresholds = get_thresholds()
+    ae_thresholds = thresholds['ae'][:3]
+    max_ae_threshold = thresholds['ae'][3]
+    rf_thresholds = thresholds['rf']
 
     while True:
         flow = flow_queue.get()

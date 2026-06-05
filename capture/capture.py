@@ -1,11 +1,7 @@
 import ctypes
 import ctypes.util
-import sys
-import time
-import hashlib
-
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
+import sys, time, hashlib
+import util.paths as p
 
 IPV6_EXT_HEADERS = {
             0,  # Hop-by-Hop Options
@@ -344,7 +340,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
                 print(f'Error opening pcap file: {e}')
                 return
         else:
-            PCAP_PATH = BASE_DIR.parent / 'datasets' / 'raw' / 'pcaps' / 'FIRST-2015_Hands-on_Network_Forensics_PCAP' / '2015-03-05' / 'snort.log.1425565276'
+            PCAP_PATH = p.DATASETS_DIR / 'pcaps' / 'FIRST-2015_Hands-on_Network_Forensics_PCAP' / '2015-03-05' / 'snort.log.1425565276'
             handle = libpcap.pcap_open_offline(str(PCAP_PATH).encode(), error_buffer)
     elif interface_type == 'live-capture':
         handle = libpcap.pcap_open_live(interface, snap_len, promiscuous, read_timeout, error_buffer)

@@ -1,24 +1,15 @@
-import argparse
-import signal
-import sys
-if sys.platform == 'win32':
-    import ctypes
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()
-        except Exception:
-            pass
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NIDS.NetworkIntrusionDetection')
+import argparse, signal, sys, winreg
+import util.paths as p
 
 from multiprocessing import Process, Queue, Event
 from capture.capture import capture_process
 from inference.inference import inference_process
 from gui.create_dashboard import create_tray_icon
 from alerts.alert_engine import AlertEngine
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
-# Crucial thresholds and parameters. Check retrain_ae.py for more
+# Crucial thresholds and parameters. Check retraining.py for more
 RF_THRESHOLD = 2
 AE_THRESHOLD = 2
 DEFENSES = {'Isolation Forest':True, 'Temporal Isolation':True, 'Rollback':True}
@@ -27,17 +18,34 @@ INTERVALS = [7200, 86400, 172800] # drift check interval, retrain interval, drif
 def register_app_id():
     if sys.platform == 'win32':
         try:
-            import winreg
-            from pathlib import Path
             key_path = r'SOFTWARE\Classes\AppUserModelId\NIDS.NetworkIntrusionDetection'
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
                 winreg.SetValueEx(key, 'DisplayName', 0, winreg.REG_SZ, 'NIDS')
                 winreg.SetValueEx(key, 'IconUri', 0, winreg.REG_SZ,
-                                  str(Path(__file__).parent / 'gui' / 'resources' / 'nids_logo.png'))
-        except Exception as e:
-            print(f'Could not register app ID: {e}')
+                                  str(p.ICON_PATH))
+        except Exception:
+            LOGGER.exception(f'Could not register app ID')
+
+def init_app_user():
+    if sys.platform == 'win32':
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            LOGGER.warning('Error setting up user process (Windows only)')
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                LOGGER.exception('Could not set up user process (Windows only)')
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NIDS.NetworkIntrusionDetection')
+
+# dependency refactoring (use the functions in util/paths.py)
+# hook up the logging so it's easy to know what's going on in the system
+# implement centralized feature retrieval from datasets
+# mass refactoring of retraining system for readability and efficiency
 
 if __name__ == "__main__":
+    init_app_user()
     register_app_id()
 
     parser = argparse.ArgumentParser(description='NIDS - Network Intrusion Detection System')

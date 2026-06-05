@@ -6,25 +6,14 @@ if sys.platform == 'win32':
     APP_ID = 'NIDS.NetworkIntrusionDetection'
     toaster = WindowsToaster(APP_ID)
 
-import sqlite3
-import logging
-import json
-import socket
+import sqlite3, logging, json, socket
+import util.paths as p
 from datetime import datetime, timezone
-
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
-FLOW_DB_PATH = BASE_DIR.parent / 'data' / 'nids_flows.db'
-ALERT_DB_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.db'
-LOG_PATH = BASE_DIR.parent / 'data' / 'nids_alerts.log'
-
-ICON_PATH = BASE_DIR.parent / 'gui' / 'resources' / 'nids_logo.png'
 
 logger = logging.getLogger('nids_alerts')
 logger.setLevel(logging.INFO)
 
-LOG_PATH.parent.mkdir(exist_ok=True)
-handler = logging.FileHandler(LOG_PATH)
+handler = logging.FileHandler(p.ALERT_LOG_PATH)
 handler.setFormatter(logging.Formatter('%(message)s'))
 logger.addHandler(handler)
 
@@ -40,8 +29,8 @@ def ip_to_str(ip_bytes):
         return str(ip_bytes)
 
 def init_db():
-    FLOW_DB_PATH.parent.mkdir(exist_ok=True)
-    with sqlite3.connect(FLOW_DB_PATH) as conn:
+    p.FLOW_DB_PATH.parent.mkdir(exist_ok=True)
+    with sqlite3.connect(p.FLOW_DB_PATH) as conn:
         conn.execute('''
         CREATE TABLE IF NOT EXISTS flow_logs (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +58,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_rf_category ON flow_logs(rf_category)
         ''')
 
-    with sqlite3.connect(ALERT_DB_PATH) as conn:
+    with sqlite3.connect(p.ALERT_DB_PATH) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS alert_logs (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +73,7 @@ def init_db():
         ''')
 
 def log_flow(flow, ae_percent, ae_category, rf_category, ae_score, rf_score, ae_features_dict, rf_features_dict, ja3_hash, ja3_malicious):
-    conn = sqlite3.connect(FLOW_DB_PATH)
+    conn = sqlite3.connect(p.FLOW_DB_PATH)
     try:
         conn.execute(
             "INSERT INTO flow_logs "
@@ -114,7 +103,7 @@ def log_flow(flow, ae_percent, ae_category, rf_category, ae_score, rf_score, ae_
         conn.close()
 
 def log_alert(alert:dict):
-    conn = sqlite3.connect(ALERT_DB_PATH)
+    conn = sqlite3.connect(p.ALERT_DB_PATH)
     try:
         conn.execute(
             "INSERT INTO alert_logs "
@@ -158,13 +147,13 @@ def send_system_notification(alert:dict):
     toast.text_fields = [title, body]
     toast.duration = ToastDuration.Default
 
-    if ICON_PATH.exists():
-        toast.AddImage(ToastDisplayImage.fromPath(str(ICON_PATH)))
+    if p.ICON_PATH.exists():
+        toast.AddImage(ToastDisplayImage.fromPath(str(p.ICON_PATH)))
 
     toaster.show_toast(toast)
 
 def view_flow_db():
-    with sqlite3.connect(FLOW_DB_PATH) as conn:
+    with sqlite3.connect(p.FLOW_DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
 
         count = conn.execute("SELECT COUNT(*) FROM flow_logs").fetchone()[0]
@@ -182,7 +171,7 @@ def view_flow_db():
             print(dict(row))
 
 def view_alert_db():
-    with sqlite3.connect(ALERT_DB_PATH) as conn:
+    with sqlite3.connect(p.ALERT_DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
 
         count = conn.execute("SELECT COUNT(*) FROM alert_logs").fetchone()[0]
