@@ -1,17 +1,16 @@
 # Designed to be lightweight and only used for filtering. All instances of the isolation forest will ONLY depend on this file.
 from sklearn.ensemble import IsolationForest
 import joblib
-import pandas as pd
+import util.paths as p
 
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
+from util.feature_retrieval import get_ae_features_training
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
-def fit_isolation_forest(training_features_path):
-    if not training_features_path.exists():
-        from features.extract_training import process_raw_dataset
-        process_raw_dataset()
 
-    df = pd.read_csv(training_features_path)
+def fit_isolation_forest():
+    LOGGER.info('Isolation Forest began training')
+    features = get_ae_features_training()
 
     iso = IsolationForest(
         n_estimators=100,
@@ -20,17 +19,19 @@ def fit_isolation_forest(training_features_path):
         n_jobs=-1
     )
 
-    iso.fit(df)
-    joblib.dump(iso, BASE_DIR.parent/'artifacts'/'iso_forest.pkl')
+    iso.fit(features)
+    joblib.dump(iso, p.ISO_MODEL_PATH)
+
+    LOGGER.info('Isolation Forest trained successfully')
     return iso
 
 def iso_forest_filter(features_df):
-    if not Path(BASE_DIR.parent/'artifacts'/'iso_forest.pkl').exists():
-        fit_isolation_forest(BASE_DIR.parent.parent/'datasets'/'processed'/'ae_training.csv')
+    if not p.ISO_MODEL_PATH.exists():
+        fit_isolation_forest()
 
-    iso = joblib.load(BASE_DIR.parent/'artifacts'/'iso_forest.pkl')
+    iso = joblib.load(p.ISO_MODEL_PATH)
     predictions = iso.predict(features_df) # 1 = normal, -1 = outlier
     return predictions == 1
 
 if __name__ == '__main__':
-    fit_isolation_forest(BASE_DIR.parent.parent/'datasets'/'processed'/'ae_training.csv')
+    fit_isolation_forest()

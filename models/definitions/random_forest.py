@@ -1,14 +1,14 @@
 import joblib as jb
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
+import util.paths as p
 
 def construct_model():
-    if not Path(BASE_DIR.parent / 'artifacts').exists():
-        Path(BASE_DIR.parent / 'artifacts').mkdir()
-
-    if not Path(BASE_DIR.parent/'artifacts'/'rf_model.pkl').exists():
-        from training.rf_train import create_model
-        create_model()
-
-    rf = jb.load(BASE_DIR.parent/'artifacts'/'rf_model.pkl')
+    if not p.rf_exists():
+        return None
+    rf = jb.load(p.RF_MODEL_PATH)
     return rf
+
+def get_predictions(rf, rf_binary_threshold, features):
+    proba = rf.predict_proba(features)[:,1]
+    predictions = (proba > rf_binary_threshold).astype(int)
+
+    return proba, predictions

@@ -1,8 +1,7 @@
+import util.paths as p
+import pandas as pd
 import torch.nn as nn
 import torch
-
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
 
 # model structure
 class AutoEncoder(nn.Module):
@@ -30,16 +29,23 @@ class AutoEncoder(nn.Module):
         z = self.encoder(x)
         return self.decoder(z)
 
-def construct_model(load=False, model_name='ae_model', l1=32, l2=16, l3=8):
+def construct_model(load=False, l1=32, l2=16, l3=8):
     n_features = 20
     model = AutoEncoder(n_features=n_features, layer_1=l1, layer_2=l2, layer_3=l3)
     if load:
-        if not Path(BASE_DIR.parent/'artifacts').exists():
-            Path(BASE_DIR.parent/'artifacts').mkdir()
+        if not p.ae_exists():
+            return None
+        model.load_state_dict(torch.load(p.AE_WEIGHTS_PATH))
 
-        if not Path(BASE_DIR.parent /'artifacts'/f'{model_name}.pt').exists():
-            from training.ae_train import train_model
-            train_model()
-
-        model.load_state_dict(torch.load(BASE_DIR.parent / 'artifacts' / 'ae_model.pt'))
     return model
+
+def get_error(ae, x):
+    if isinstance(x, pd.DataFrame):
+        x = torch.tensor(x.values, dtype=torch.float32)
+    elif not isinstance(x, torch.Tensor):
+        x = torch.tensor(x, dtype=torch.float32)
+
+    with torch.no_grad():
+        recon = ae(x)
+        error = ((x - recon) ** 2).mean(dim=1).numpy()
+    return error
