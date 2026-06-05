@@ -1,11 +1,14 @@
 from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
 import joblib as jb
+import util.paths as p
 
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
+from util.feature_retrieval import get_rf_features_training, get_rf_labels_training
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
 def create_model():
+    LOGGER.info('Rf began training')
     rf = RandomForestClassifier(
         n_estimators=300,
         max_depth=None,
@@ -15,16 +18,15 @@ def create_model():
         random_state=42,
     )
 
-    if not Path(BASE_DIR.parent/'datasets'/'processed'/'rf_training.csv').exists() or not Path(BASE_DIR.parent/'datasets'/'processed'/'rf_labels_training.csv').exists():
-        from features.extract_training import process_raw_dataset
-        process_raw_dataset()
+    if not p.processed_dataset_exists():
+        return
 
-    x_train = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_training.csv', low_memory=False)
-    y_train = pd.read_csv(BASE_DIR.parent/'datasets'/'processed'/'rf_labels_training.csv', low_memory=False)['Label'].values
+    training_features = get_rf_features_training()
+    training_labels = get_rf_labels_training()['Label'].values
 
-    print('Fitting rf model...')
-    rf.fit(x_train, y_train)
-    jb.dump(rf, BASE_DIR.parent/'models'/'artifacts'/'rf_model.pkl')
+    rf.fit(training_features, training_labels)
+    jb.dump(rf, p.RF_MODEL_PATH)
+    LOGGER.info('Autoencoder finished training')
 
 if __name__ == '__main__':
     create_model()

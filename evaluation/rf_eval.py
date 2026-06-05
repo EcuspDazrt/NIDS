@@ -1,100 +1,96 @@
 import pandas as pd
 import numpy as np
-import json
+import util.paths as p
+
 from sklearn.metrics import classification_report
-
-from models.definitions.random_forest import construct_model
-
-# pathing
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
-
-rf_categories_path = BASE_DIR.parent / 'datasets' / 'processed' / 'rf_categories_testing.csv'
-rf_training_path = BASE_DIR.parent / 'datasets' / 'processed' / 'rf_training.csv'
-rf_testing_path = BASE_DIR.parent / 'datasets' / 'processed' / 'rf_testing.csv'
-rf_labels_path = BASE_DIR.parent / 'datasets' / 'processed' / 'rf_labels_testing.csv'
-
-thresholds_path = BASE_DIR.parent / 'models' / 'artifacts' / 'thresholds.json'
-
-# ------- Checks for dependencies and retrieves them if they do not exist -------
-def check_dataset():
-    if not rf_testing_path.exists() or not rf_labels_path.exists():
-        from features.extract_training import process_raw_dataset
-        process_raw_dataset()
-
-def check_thresholds():
-    if not thresholds_path.exists():
-        from scripts.calibrate_thresholds import calibrate_thresholds
-        calibrate_thresholds()
+from evaluation.helper import print_report, print_indented
+from models.definitions.random_forest import construct_model, get_predictions
+from util.feature_retrieval import get_rf_labels_testing, get_rf_features_testing, get_rf_categories_testing
+from util.thresholds import get_thresholds
+from util.logger import get_logger
+LOGGER = get_logger(__name__)
 
 
-# ------- Retrieves information used in the evaluation -------
-def get_threshold():
-    with open(thresholds_path) as f:
-        t = json.load(f)
-    rf_binary_threshold = t['rf_binary']
 
-    return rf_binary_threshold
+# <---------- Validation functions ---------->
+def source_type_valid(source_type) -> bool:
+    if source_type not in ['cicids', 'unswnb']:
+        LOGGER.error('Invalid source type')
+        return False
+    return True
 
-def get_features(features_path, source_type):
+
+def features_path_valid(features_path) -> bool:
+    if features_path is not None and not features_path.exists():
+        LOGGER.error('Invalid feature path')
+        return False
+    return True
+
+
+def feature_set_valid(features) -> bool:
+    if features is None:
+        LOGGER.error('Imported feature set is invalid')
+        return False
+    return True
+
+
+
+# <---------- Feature retrieval ---------->
+def get_validation_feature_set(features_path, source_type) -> tuple[pd.DataFrame, pd.DataFrame] | None:
     if features_path is None:
-        y_test = pd.read_csv(rf_labels_path, low_memory=False)
-        x_test = pd.read_csv(rf_testing_path, low_memory=False)
+        validation_labels = get_rf_labels_testing()
+        validation_features = get_rf_features_testing()
+        return validation_features, validation_labels
 
-    else:
-        df = pd.read_csv(features_path, low_memory=False)
-        if source_type == 'cicids':
-            y_test = (df['Label'].str.strip().str.lower() != 'benign').astype(int)
-            x_test = df.drop('Label', axis=1)
-        elif source_type == 'unswnb':
-            y_test = (df['Label'].astype(int))
-            x_test = df.drop(['Unnamed: 0', 'Source IP', 'Destination IP', 'Source Port', 'Destination Port', 'Start time', 'Last time', 'Attack category', 'Label'], axis=1)
-        else:
-            print('Invalid source type...')
-            return None
-    return x_test, y_test
-
-def get_predictions(rf, rf_binary_threshold, x_test):
-    proba = rf.predict_proba(x_test)[:,1]
-    y_pred = (proba > rf_binary_threshold).astype(int)
-
-    return proba, y_pred
-
-def get_dataframes(features_path, x_test):
-    if not features_path:
-        train_df = pd.read_csv(rf_training_path, low_memory=False)
-        test_df = pd.read_csv(rf_testing_path, low_memory=False)
-    else:
-        train_df = pd.DataFrame()
-        test_df = x_test
-
-    return train_df, test_df
-
-def get_categories(features_path, source_type, unique_mask):
-    if not features_path:
-        y_categories = pd.read_csv(rf_categories_path)
-    else:
-        if source_type == 'cicids':
-            y_categories = pd.read_csv(features_path, low_memory=False)['Label']
-        elif source_type == 'unswnb':
-            y_categories = pd.read_csv(features_path, low_memory=False)['Attack category']
-        else:
-            print('Invalid source type...')
+    features_df = pd.read_csv(features_path, low_memory=False)
+    validation_labels = pd.DataFrame()
+    validation_features = pd.DataFrame()
+    match source_type:
+        case 'cicids':
+            validation_labels = (features_df['Label'].str.strip().str.lower() != 'benign').astype(int)
+            validation_features = features_df.drop('Label', axis=1)
+        case 'unswnb':
+            validation_labels = (features_df['Label'].astype(int))
+            validation_features = features_df.drop(
+                ['Unnamed: 0', 'Source IP', 'Destination IP', 'Source Port', 'Destination Port', 'Start time',
+                 'Last time', 'Attack category', 'Label'], axis=1)
+        case _:
+            LOGGER.error('Source type is invalid')
             return None
 
-    categories_clean = y_categories[unique_mask.values]
-
-    return y_categories, categories_clean
-
-def get_category_labels(rf, rf_binary_threshold, test_features_clean):
-    proba_clean = rf.predict_proba(test_features_clean)[:, 1]
-    y_pred_clean = (proba_clean > rf_binary_threshold).astype(int)
-
-    return proba_clean, y_pred_clean
+    return validation_features, validation_labels
 
 
+def get_test_train_feature_set(features_path, features):
+    if features_path: # when there's already validation features, no need to get the cicids ones
+        empty_df = pd.DataFrame()
+        return empty_df, features
 
-# ------- Carries out crucial functionality in the evaluation -------
+    # default to the cicids test-train features (deduplicated later)
+    training_features = pd.read_csv(p.RF_TRAIN_PATH, low_memory=False)
+    testing_features = pd.read_csv(p.RF_TEST_PATH, low_memory=False)
+    return training_features, testing_features
+
+
+def get_validation_categories(features_path, source_type, unique_mask):
+    if features_path:
+        validation_categories = pd.DataFrame()
+        match source_type:
+            case 'cicids':
+                validation_categories = pd.read_csv(features_path, low_memory=False)['Label']
+            case 'unswnb':
+                validation_categories = pd.read_csv(features_path, low_memory=False)['Attack category']
+            case _:
+                LOGGER.error('Source type is invalid')
+                return None
+        return validation_categories, validation_categories[unique_mask.values]
+
+    test_categories = get_rf_categories_testing()
+    return test_categories, test_categories[unique_mask.values]
+
+
+
+# <---------- Running individual reports & helper funcs ---------->
 def deduplicate_datasets(train_df, test_df, y_test):
     train_hashes = set(train_df.round(2).apply(lambda r: hash(tuple(r)), axis=1))
     test_hashes = test_df.round(2).apply(lambda r: hash(tuple(r)), axis=1)
@@ -104,23 +100,24 @@ def deduplicate_datasets(train_df, test_df, y_test):
 
     return test_features_clean, test_labels_clean, unique_mask
 
-def run_binary_report(y_pred_clean, test_labels_clean, return_eval):
-    errors = (y_pred_clean != test_labels_clean.values.ravel()).sum()
-    total = len(test_labels_clean)
 
-    if return_eval:
-        # return structured dict of results
+def run_binary_report(clean_predictions, clean_labels, return_eval):
+    errors = (clean_predictions != clean_labels.values.ravel()).sum()
+    total = len(clean_labels)
+
+    if return_eval: # return structured dict of results
         return {'Errors': int(errors), 'Total': total, 'Percentage Error': int(errors) / total,
-                'False Positives': int(((y_pred_clean == 1) & (test_labels_clean.values.ravel() == 0)).sum()),
-                'False Negatives': int(((y_pred_clean == 0) & (test_labels_clean.values.ravel() == 1)).sum())}
+                'False Positives': int(((clean_predictions == 1) & (clean_labels.values.ravel() == 0)).sum()),
+                'False Negatives': int(((clean_predictions == 0) & (clean_labels.values.ravel() == 1)).sum())}
 
     # print all the results
     print("=== BINARY (deduplicated) ===")
-    print(classification_report(test_labels_clean, y_pred_clean))
+    print(classification_report(clean_labels, clean_predictions))
     print(f"Total errors: {errors} out of {total} ({errors / total:.4%})")
-    print(f"False positives: {((y_pred_clean == 1) & (test_labels_clean.values.ravel() == 0)).sum()}")
-    print(f"False negatives: {((y_pred_clean == 0) & (test_labels_clean.values.ravel() == 1)).sum()}")
+    print(f"False positives: {((clean_predictions == 1) & (clean_labels.values.ravel() == 0)).sum()}")
+    print(f"False negatives: {((clean_predictions == 0) & (clean_labels.values.ravel() == 1)).sum()}")
     return None
+
 
 def run_categorical_eval(rf_binary_threshold, test_labels_clean, proba_clean, categories_clean, return_eval):
     if not return_eval:
@@ -131,78 +128,69 @@ def run_categorical_eval(rf_binary_threshold, test_labels_clean, proba_clean, ca
     malicious_labels = categories_clean.values.ravel()[malicious_mask]
 
     recalls = []
-
     per_category_eval = {}
     for attack in sorted(set(malicious_labels)):
-        mask = malicious_labels == attack
-        recall = (malicious_proba[mask] > rf_binary_threshold).mean()
-        avg_score = malicious_proba[mask].mean()
-        count = mask.sum()
+        attack_labels_mask = malicious_labels == attack
+        recall = (malicious_proba[attack_labels_mask] > rf_binary_threshold).mean()
+        avg_score = malicious_proba[attack_labels_mask].mean()
+        num_attacks = attack_labels_mask.sum()
         recalls.append(recall)
-        if return_eval:
-            per_category_eval[attack] = {'Count': int(count), 'Recall': float(recall), 'Avg score': float(avg_score)}
-            continue
+        per_category_eval[attack] = {'Count': int(num_attacks), 'Recall': float(recall), 'Avg score': float(avg_score)}
 
-        print(f"{attack:40s} n={count:5d} recall={recall:.1%} avg_score={avg_score:.3f}")
-
-    if return_eval:
-        return per_category_eval, float(np.mean(recalls))
-
-    print(f"Macro recall across categories: {np.mean(recalls):.1%}")
-    return None
+    return per_category_eval, float(np.mean(recalls))
 
 
 # ------- Main evaluation function -------
-def evaluate_model(return_eval=False, features_path=None, source_type='cicids'):
+def evaluate_model(return_eval=False, validation_features_path=None, source_type='cicids'):
+    if not p.processed_dataset_exists() or not p.thresholds_exist():
+        return None
+    if not source_type_valid(source_type) or not features_path_valid(validation_features_path):
+        return None
+
     rf = construct_model()
-    check_thresholds()
-    check_dataset()
-    rf_binary_threshold = get_threshold()
+    rf_binary_threshold = get_thresholds()['rf_binary']
+    validation_feature_set = get_validation_feature_set(validation_features_path, source_type)
 
-    if source_type not in ['cicids', 'unswnb']:
-        print('Invalid source type...')
-        return None
-    if features_path is not None and not features_path.exists():
-        print('Invalid feature path...')
-        return None
-    features = get_features(features_path, source_type)
-    if features is None:
+    if not feature_set_valid(validation_feature_set):
         return None
 
-    x_test, y_test = features
-    proba, y_pred = get_predictions(rf, rf_binary_threshold, x_test)
+    validation_features, validation_labels = validation_feature_set
+    proba, predictions = get_predictions(rf, rf_binary_threshold, validation_features)
 
-    train_df, test_df = get_dataframes(features_path, x_test)
-    test_features_clean, test_labels_clean, unique_mask = deduplicate_datasets(train_df, test_df, y_test)
+    training_features, testing_features = get_test_train_feature_set(validation_features_path, validation_features)
+    clean_validation_features, clean_validation_labels, unique_mask = deduplicate_datasets(training_features, testing_features, validation_labels)
 
-    categories = get_categories(features_path, source_type, unique_mask)
+    categories = get_validation_categories(validation_features_path, source_type, unique_mask)
     if categories is None:
         return None
 
     y_categories, categories_clean = categories
-    proba_clean, y_pred_clean = get_category_labels(rf, rf_binary_threshold, test_features_clean)
+    proba_clean, clean_predictions = get_predictions(rf, rf_binary_threshold, clean_validation_features)
 
+    per_category_evaluation_dict = {}
+    binary_eval = run_binary_report(clean_predictions, clean_validation_labels, return_eval)
+    category_eval = run_categorical_eval(rf_binary_threshold, clean_validation_labels, proba_clean, categories_clean, return_eval)
 
-    categorical_eval = {}
-    binary_eval = run_binary_report(y_pred_clean, test_labels_clean, return_eval)
-    category_eval = run_categorical_eval(rf_binary_threshold, test_labels_clean, proba_clean, categories_clean, return_eval)
+    # populate per-category evaluation
+    per_category_eval, macro_recall = category_eval
+    per_category_evaluation_dict['Binary'] = binary_eval
+    per_category_evaluation_dict['Per-category Eval'] = per_category_eval
+    per_category_evaluation_dict['Macro recall'] = macro_recall
 
-    # populate categorical_eval
-    if return_eval:
-        per_category_eval, macro_recall = category_eval
+    if not return_eval:
+        print_report(validation_labels, predictions)
+        print_indented(per_category_evaluation_dict)
+        return None
 
-        categorical_eval['Binary'] = binary_eval
-        categorical_eval['Per-category Eval'] = per_category_eval
-        categorical_eval['Macro recall'] = macro_recall
+    return clean_validation_labels, clean_predictions, per_category_evaluation_dict
 
-    if return_eval:
-        return test_labels_clean, y_pred_clean, categorical_eval
-
-    print(classification_report(y_test, y_pred))
-    return None
 
 if __name__ == '__main__':
-    results = evaluate_model(features_path=BASE_DIR.parent / 'experiments' / 'csv\'s' / 'bq1' / 'rf_cicids.csv', return_eval=False)
+    from pathlib import Path
+
+    BASE_DIR = Path(__file__).parent
+
+    results = evaluate_model(validation_features_path=BASE_DIR.parent / 'experiments' / 'csv\'s' / 'bq1' / 'rf_cicids.csv', return_eval=False)
     if results is not None:
         truth, prediction, categorical_eval = results
         print(classification_report(truth, prediction), categorical_eval)
