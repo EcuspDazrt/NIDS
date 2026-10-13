@@ -50,7 +50,7 @@ def get_ae_samples(temp_iso, flow_ids=None):
         query = f'''
             SELECT ae_features FROM flow_logs
             WHERE rf_category = 0
-            AND timestamp < datetime('now', '-7 days')
+            AND timestamp > datetime('now', '-7 days')
             {id_filter}
         '''
 

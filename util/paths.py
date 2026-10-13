@@ -5,7 +5,7 @@ LOGGER = get_logger(__name__)
 BASE_DIR = Path(__file__).parent
 
 # <---------- Directories ---------->
-DATA_DIR = BASE_DIR.parent / 'datasets'
+DATA_DIR = BASE_DIR.parent / 'data'
 GUI_DIR = BASE_DIR.parent / 'gui'
 DATASETS_DIR = BASE_DIR.parent / 'datasets'
 PROCESSED_DATASETS_DIR = DATA_DIR / 'processed'

@@ -6,7 +6,7 @@ LOGGER = get_logger(__name__)
 
 def passes_flow_threshold(num_flows, additional_msg=''):
     from retraining.retrain_ae import FLOW_THRESHOLD
-    if not num_flows < FLOW_THRESHOLD:
+    if num_flows < FLOW_THRESHOLD:
         message = f'insufficient number of flows: {num_flows} < {FLOW_THRESHOLD}{additional_msg}'
         log_retrain_event(0, None, None, 0, message)
         LOGGER.warning(message)
