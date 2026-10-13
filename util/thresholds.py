@@ -43,9 +43,10 @@ def calculate_rf_thresholds(pr_thresholds, f1_scores, proba):
 
 
 # <---------- Calibration & Recalibration ---------->
-def replace_ae_thresholds(ae_thresholds):
+def replace_ae_thresholds(ae_binary, ae_thresholds):
     with open(p.THRESHOLDS_PATH) as f:
         thresholds = json.load(f)
+    thresholds['ae_binary'] = ae_binary
     thresholds['ae'] = ae_thresholds
     with open(p.THRESHOLDS_PATH, 'w') as f:
         json.dump(thresholds, f)
@@ -63,10 +64,10 @@ def recalibrate_ae_thresholds(ae):
     ae.eval()
     error = get_error(ae, benign_features)
 
-    _, ae_category_thresholds = calculate_ae_thresholds(None, None, error)
-    replace_ae_thresholds(ae_category_thresholds)
+    ae_binary, ae_category_thresholds = calculate_ae_thresholds(None, None, error)
+    replace_ae_thresholds(ae_binary, ae_category_thresholds)
 
-    LOGGER.info(f'[COMPLETE] AE category threshold recalibration: {ae_category_thresholds}')
+    LOGGER.info(f'[COMPLETE] AE category threshold recalibration: {ae_binary}, {ae_category_thresholds}')
 
 
 def calibrate_ae_thresholds():

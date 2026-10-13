@@ -13,13 +13,6 @@ from util.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 
 
 def copy_ae_into_construction(construction, label, epoch):
@@ -71,7 +64,18 @@ def run_epoch(model, optimizer, criterion, scheduler, losses, epoch, epochs, tra
 
 
 def train_model(load=False, epochs=20, features=None, batch_size=2048, update_scaler=False, save_backup=False, backup_interval=None, label='', construction=''):
+    LOGGER.info('Autoencoder began seeding')
+
+    SEED = 42
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     LOGGER.info('Autoencoder began training')
+
     if not p.processed_dataset_exists():
         return None, None
     if features is None:
