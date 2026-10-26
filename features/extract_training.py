@@ -37,6 +37,9 @@ def port_category(port_series):
 def extract_features_rf(df, label="", save_type=None, experiment=False):
     df.columns = df.columns.str.strip()
 
+    d = df[(df['Total Fwd Packets'] == 2) & (df['Fwd Packet Length Max'] > df['Fwd Packet Length Min'])]
+    print((d['Fwd Packet Length Std'] / (d['Fwd Packet Length Max'] - d['Fwd Packet Length Min'])).describe())
+
     # df = df.dropna(how='all')  # drop rows where every column is null
     # df = df.dropna(subset=['Destination Port', 'Flow Duration', 'Protocol'])  # drop rows missing critical fields
 
@@ -77,7 +80,7 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
     features['Total Byte Min'] = df[['Fwd Packet Length Min', 'Bwd Packet Length Min']].min(axis=1)
     features['Total Byte Mean'] = ((df['Fwd Packet Length Mean'] * fwd) + (df['Bwd Packet Length Mean'] * bwd)) / (fwd + bwd + 1e-6)
     features['Total Byte Std'] = df['Packet Length Std']
-    features['Total Byte Variance'] = (((features['Total Byte Max'] - features['Total Byte Mean']) ** 2) + ((features['Total Byte Mean'] - features['Total Byte Min']) ** 2)) / 2
+    features['Total Byte Variance'] = df['Packet Length Std'] ** 2
 
     features['Forward Packets'] = fwd
     features['Forward Bytes'] = df['Fwd Packet Length Mean'] * fwd
@@ -87,7 +90,7 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
     features['Forward Byte Min'] = df['Fwd Packet Length Min']
     features['Forward Byte Mean'] = df['Fwd Packet Length Mean']
     features['Forward Byte Std'] = df['Fwd Packet Length Std']
-    features['Forward Byte Variance'] = (((features['Forward Byte Max'] - features['Forward Byte Mean']) ** 2) + ((features['Forward Byte Mean'] - features['Forward Byte Min']) ** 2)) / 2
+    features['Forward Byte Variance'] = df['Fwd Packet Length Std'] ** 2
 
     features['Backward Packets'] = bwd
     features['Backward Bytes'] = df['Bwd Packet Length Mean'] * bwd
@@ -97,7 +100,7 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
     features['Backward Byte Min'] = df['Bwd Packet Length Min']
     features['Backward Byte Mean'] = df['Bwd Packet Length Mean']
     features['Backward Byte Std'] = df['Bwd Packet Length Std']
-    features['Backward Byte Variance'] = (((features['Backward Byte Max'] - features['Backward Byte Mean']) ** 2) + ((features['Backward Byte Mean'] - features['Backward Byte Min']) ** 2)) / 2
+    features['Backward Byte Variance'] = df['Bwd Packet Length Std'] ** 2
 
 
     features['Total IAT'] = (df['Fwd IAT Total'] + df['Bwd IAT Total']) / 1_000_000
@@ -105,30 +108,30 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
     features['Total IAT Min'] = (df[['Fwd IAT Min', 'Bwd IAT Min']].min(axis=1)) / 1_000_000
     features['Total IAT Mean'] = ((df['Fwd IAT Total'] + df['Bwd IAT Total']) / (fwd + bwd + 1e-6)) / 1_000_000
     features['Total IAT Std'] = (df['Flow IAT Std']) / 1_000_000
-    features['Total IAT Variance'] = ((((features['Total IAT Max'] - features['Total IAT Mean']) ** 2) + ((features['Total IAT Mean'] - features['Total IAT Min']) ** 2)) / 2) / 1_000_000
+    features['Total IAT Variance'] = (df['Flow IAT Std'] / 1_000_000) ** 2
     features['Forward IAT'] = (df['Fwd IAT Total']) / 1_000_000
     features['Forward IAT Max'] = (df['Fwd IAT Max']) / 1_000_000
     features['Forward IAT Min'] = (df['Fwd IAT Min']) / 1_000_000
     features['Forward IAT Mean'] = (df['Fwd IAT Total'] / (fwd + 1e-6)) / 1_000_000
     features['Forward IAT Std'] = (df['Fwd IAT Std']) / 1_000_000
-    features['Forward IAT Variance'] = ((((features['Forward IAT Max'] - features['Forward IAT Mean']) ** 2) + ((features['Forward IAT Mean'] - features['Forward IAT Min']) ** 2)) / 2) / 1_000_000
+    features['Forward IAT Variance'] = (df['Fwd IAT Std'] / 1_000_000) ** 2
     features['Backward IAT'] = (df['Bwd IAT Total']) / 1_000_000
     features['Backward IAT Max'] = (df['Bwd IAT Max']) / 1_000_000
     features['Backward IAT Min'] = (df['Bwd IAT Min']) / 1_000_000
     features['Backward IAT Mean'] = (df['Bwd IAT Total'] / (bwd + 1e-6)) / 1_000_000
     features['Backward IAT Std'] = (df['Bwd IAT Std']) / 1_000_000
-    features['Backward IAT Variance'] = ((((features['Backward IAT Max'] - features['Backward IAT Mean']) ** 2) + ((features['Backward IAT Mean'] - features['Backward IAT Min']) ** 2)) / 2) / 1_000_000
+    features['Backward IAT Variance'] = (df['Bwd IAT Std'] / 1_000_000) ** 2
 
     features['Active Max'] = (df['Active Max']) / 1_000_000
     features['Active Min'] = (df['Active Min']) / 1_000_000
     features['Active Mean'] = (df['Active Mean']) / 1_000_000
     features['Active Std'] = (df['Active Std']) / 1_000_000
-    features['Active Variance'] = ((((features['Active Max'] - features['Active Mean']) ** 2) + ((features['Active Mean'] - features['Active Min']) ** 2)) / 2) / 1_000_000
+    features['Active Variance'] = (df['Active Std'] / 1_000_000) ** 2
     features['Idle Max'] = (df['Idle Max']) / 1_000_000
     features['Idle Min'] = (df['Idle Min']) / 1_000_000
     features['Idle Mean'] = (df['Idle Mean']) / 1_000_000
     features['Idle Std'] = (df['Idle Std']) / 1_000_000
-    features['Idle Variance'] = ((((features['Idle Max'] - features['Idle Mean']) ** 2) + ((features['Idle Mean'] - features['Idle Min']) ** 2)) / 2) / 1_000_000
+    features['Idle Variance'] = (df['Idle Std'] / 1_000_000) ** 2
 
     features['Syn Ratio'] = syn / (fwd + bwd + 1e-6)
     features['Ack Ratio'] = ack / (fwd + bwd + 1e-6)

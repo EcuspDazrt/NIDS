@@ -49,9 +49,19 @@ if __name__ == "__main__":
     register_app_id()
 
     parser = argparse.ArgumentParser(description='NIDS - Network Intrusion Detection System')
-    parser.add_argument('--interface', '-i', type=str, required=True, help='Network interface to monitor (e.g. eth0, en0, or Windows NPF device GUID)')
+    parser.add_argument('--interface', '-i', type=str, required=False, help='Network interface to monitor (e.g. eth0, en0, or Windows NPF device GUID)')
+    parser.add_argument('--pcap-file', '-p', type=str, required=False, help='Pcap file to monitor')
+
     args = parser.parse_args()
-    interface = args.interface.replace('Tcpip', 'NPF')
+    interface = args.interface
+    if interface:
+        interface = interface.replace('Tcpip', 'NPF')
+    pcap_file = args.pcap_file
+
+    if pcap_file and interface:
+        raise(Exception('Only one of interface or pcap-file can be specified'))
+    if not pcap_file and not interface:
+        raise(Exception('Interface or pcap-file need to be specified'))
 
     flow_queue = Queue()
     results_queue = Queue(maxsize=500)
@@ -61,7 +71,11 @@ if __name__ == "__main__":
 
     alert_engine = AlertEngine(RF_THRESHOLD, AE_THRESHOLD, results_queue, flash_event)
 
-    capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'live-capture', interface))
+    if interface:
+        capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'live-capture', interface))
+    else:
+        capture = Process(target=capture_process, args=(flow_queue, stop_capture, 'simulation', None, pcap_file))
+
     inference = Process(target=inference_process, args=(flow_queue, results_queue, models_ready, alert_engine))
 
     capture.daemon = True

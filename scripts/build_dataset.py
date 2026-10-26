@@ -5,23 +5,24 @@ import joblib as jb
 import util.paths as p
 
 
-def create_scaler():
+def create_scaler(features):
     scaler = StandardScaler()
+    scaler.fit(features)
     jb.dump(scaler, p.AE_SCALER_PATH)
 
 
 def tensor_to_loader(final_features, batch_size):
     dataset = TensorDataset(final_features)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
     return loader
 
 
 def create_dataset(features, batch_size=2048, loader=True, update_scaler=False):
-    if not p.ae_scaler_exists():
+    if not p.ae_scaler_exists() and not update_scaler:
         return None
 
     if update_scaler:
-        create_scaler()
+        create_scaler(features)
 
     scaler = jb.load(p.AE_SCALER_PATH)
     expected_columns = list(scaler.feature_names_in_)

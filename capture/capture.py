@@ -10,11 +10,11 @@ IPV6_EXT_HEADERS = {
             51,  # Authentication Header
             60,  # Destination Options
         }
-SWEEP_INTERVAL = 10.0 # seconds
+SWEEP_INTERVAL = 2.0 # seconds
 
-ACTIVITY_THRESHOLD = 1.0  # seconds
-TIMEOUT_THRESHOLD = 60.0  # seconds
-ACTIVE_TIMEOUT_THRESHOLD = 120.0 # seconds
+ACTIVITY_THRESHOLD_SECONDS = 1.0  # time it takes to flip a flow from active to idle
+TIMEOUT_THRESHOLD_SECONDS = 5.0  # time it takes for an idle flow to time out
+ACTIVE_TIMEOUT_THRESHOLD_SECONDS = 120.0 # time it takes for an active flow to time out
 
 TCP_PROTOCOL = 6
 UDP_PROTOCOL = 17
@@ -67,7 +67,7 @@ class RunningStats:
     def variance(self):
         if self.n < 2:
             return 0.0
-        return self.M2 / self.n
+        return self.M2 / (self.n - 1)
 
     @property
     def std(self):
@@ -251,6 +251,24 @@ def parse_ja3(raw_bytes, transport_start):
     except Exception as e:
         print(f'Error: {e}')
 
+
+def l4_header_len(raw, transport_start, protocol):
+    if protocol == UDP_PROTOCOL:
+        return 8
+    return (raw[transport_start + 12] >> 4) * 4   # TCP data offset
+
+def payload_len_v4(raw, ip_start, transport_start, protocol):
+    total = int.from_bytes(raw[ip_start+2:ip_start+4], 'big')
+    ip_hdr = transport_start - ip_start
+    return max(0, total - ip_hdr - l4_header_len(raw, transport_start, protocol))
+
+def payload_len_v6(raw, ip_start, transport_start, protocol):
+    ip_payload = int.from_bytes(raw[ip_start+4:ip_start+6], 'big')  # includes ext headers
+    ext = transport_start - (ip_start + 40)
+    return max(0, ip_payload - ext - l4_header_len(raw, transport_start, protocol))
+
+
+
 def get_flow(flow_id, flow_state):
     if flow_id in flow_state:
         return flow_state[flow_id]
@@ -332,7 +350,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
     if interface_type == 'simulation':
         if pcap_file:
             try:
-                handle = libpcap.pcap_open_offline(pcap_file, error_buffer)
+                handle = libpcap.pcap_open_offline(str(pcap_file).encode(), error_buffer)
             except FileNotFoundError:
                 print(f'Pcap file not found: {str(pcap_file.decode())}')
                 return
@@ -360,7 +378,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
     while True:
         if stop_capture and stop_capture.is_set():
             time.sleep(0.1)
-            continue
+            break
         result = libpcap.pcap_next_ex(
             handle,
             ctypes.byref(header),
@@ -422,7 +440,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
             to_export = [ # find all flows that have passed the active timeout threshold, store in this list
                 (k, v) for k, v in flow_state.items()
                 if v['start_time'] is not None and
-                   current_timestamp - v['start_time'] >= ACTIVE_TIMEOUT_THRESHOLD
+                   current_timestamp - v['start_time'] >= ACTIVE_TIMEOUT_THRESHOLD_SECONDS
             ]
             for swept_key, swept_flow in to_export:
                 if swept_flow['fwd_packets'] + swept_flow['bwd_packets'] > 0:
@@ -431,7 +449,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
                 swept_canonical = swept_key[1:]
                 epoch_counters[swept_canonical] = swept_key[0] + 1
 
-        while last_seen is not None and current_timestamp - last_seen >= TIMEOUT_THRESHOLD:
+        while last_seen is not None and current_timestamp - last_seen >= TIMEOUT_THRESHOLD_SECONDS:
             if flow_key in flow_state:
                 if flow['fwd_packets'] + flow['bwd_packets'] > 0:
                     queue.put(flow)
@@ -457,7 +475,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
             flow['protocol'] = protocol
 
         direction = 'fwd' if (source_ip == flow['src_ip']) and (source_port == flow['src_port']) else 'bwd'
-        num_bytes = header[0].len
+        num_bytes = payload_len_v4(raw_bytes, ip_start, transport_start, protocol) if ethertype == ETHERTYPE_IPV4 else payload_len_v6(raw_bytes, ip_start, transport_start, protocol)
 
         flow[f'{direction}_packets'] += 1
         flow[f'{direction}_bytes'] += num_bytes
@@ -470,7 +488,7 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
             flow[f'{direction}_iat_stats'].update(IAT)
             flow[f'{direction}_iat_total'] += IAT
 
-            if IAT < ACTIVITY_THRESHOLD:
+            if IAT < ACTIVITY_THRESHOLD_SECONDS:
                 flow['current_active'] += IAT
             else:
                 if flow['current_active'] > 0:
@@ -492,3 +510,9 @@ def capture_process(queue, stop_capture, interface_type, interface=None, pcap_fi
                 queue.put(flow)
                 del flow_state[flow_key]
                 epoch_counters[canonical] = epoch_id + 1
+
+    for flow in flow_state.values():
+        if flow['fwd_packets'] + flow['bwd_packets'] > 0:
+            queue.put(flow)
+    flow_state.clear()
+    libpcap.pcap_close(handle)

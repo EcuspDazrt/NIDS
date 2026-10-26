@@ -1,7 +1,7 @@
 # ADR-002: Model Ensemble
 
 **Date:** 2026-03-03
-**Status:** Superseded by [ADR-017](ADR-017-SeparatedModelScores)
+**Status:** Superseded by [ADR-017](ADR-017-SeparatedModelScores.md)
 
 ## Context
 - To incorporate multiple machine learning models into a single system, there must be a way for the user to accurately interpret the scores

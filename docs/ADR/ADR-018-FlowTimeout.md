@@ -1,7 +1,7 @@
 # ADR-018: Flow Timeout
 
 **Date:** 2026-03-12
-**Status:** Accepted
+**Status:** Superseded by [ADR-024](ADR-024-FlowTimeout.md)
 
 ## Context
 - To ensure the system will properly scrape each flow and not leave it in queue, there must be a system to sweep the queue periodically to find any non-timed out flows that pass a certain activity threshold.

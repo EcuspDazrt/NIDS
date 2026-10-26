@@ -8,9 +8,9 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR.parent / 'data'
 GUI_DIR = BASE_DIR.parent / 'gui'
 DATASETS_DIR = BASE_DIR.parent / 'datasets'
-PROCESSED_DATASETS_DIR = DATA_DIR / 'processed'
-AGGREGATED_DATASETS_DIR = DATA_DIR / 'Aggregated'
-RAW_CICIDS_DIR = DATA_DIR / 'CICIDS2017'
+PROCESSED_DATASETS_DIR = DATASETS_DIR / 'processed'
+AGGREGATED_DATASETS_DIR = DATASETS_DIR / 'Aggregated'
+RAW_CICIDS_DIR = DATASETS_DIR / 'CICIDS2017'
 ARTIFACTS_DIR = BASE_DIR.parent / 'models' / 'artifacts'
 BACKUPS_DIR = ARTIFACTS_DIR / 'retraining_backups'
 
@@ -135,7 +135,7 @@ def could_train_ae():
 def ae_scaler_exists():
     if AE_SCALER_PATH.exists():
         return True
-    return could_train_ae()
+    return False
 
 
 def ae_exists():

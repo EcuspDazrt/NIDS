@@ -19,8 +19,7 @@ def drop(df, handle_benign):
                             'Flow IAT Min', 'Fwd PSH Flags',
                             'Bwd PSH Flags', 'Fwd URG Flags', 'Bwd URG Flags',
                             'Fwd Header Length', 'Bwd Header Length', 'Fwd Packets/s',
-                            'Bwd Packets/s', 'Min Packet Length', 'Max Packet Length',
-                            'Packet Length Mean', 'Packet Length Variance',
+                            'Bwd Packets/s', 'Min Packet Length', 'Max Packet Length', 'Packet Length Mean',
                             'PSH Flag Count', 'URG Flag Count',
                             'CWE Flag Count', 'ECE Flag Count', 'Down/Up Ratio',
                             'Average Packet Size', 'Avg Fwd Segment Size',
@@ -47,7 +46,7 @@ def drop(df, handle_benign):
     # 'Fwd IAT Std', 'Bwd IAT Std'
     # 'Active Max', 'Active Min', 'Active Mean',
     # 'Idle Max', 'Idle Min', 'Idle Mean',
-    # 'Active Std', 'Idle Std',
+    # 'Active Std', 'Idle Std', 'Packet Length Variance'
     # 'SYN Flag Count', 'ACK Flag Count',
     # 'FIN Flag Count', 'RST Flag Count',
     # 'Flow IAT Std', 'Packet Length Std'
