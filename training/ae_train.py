@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch, shutil, random
 
+from pathlib import Path
 from util.feature_retrieval import get_ae_features_training
 from scripts.build_dataset import create_dataset
 from models.definitions.autoencoder import construct_model
@@ -16,6 +17,8 @@ LOGGER = get_logger(__name__)
 
 
 def copy_ae_into_construction(construction, label, epoch):
+    Path.mkdir(p.MANUAL_BACKUPS_DIR, exist_ok=True)
+    Path.mkdir(p.MANUAL_BACKUPS_DIR / f'{construction}_construction', exist_ok=True)
     shutil.copy(p.AE_WEIGHTS_PATH, p.MANUAL_BACKUPS_DIR / f'{construction}_construction' / f'ae_model_{label.replace('*', str(epoch + 1))}.pt')
     shutil.copy(p.AE_SCALER_PATH, p.MANUAL_BACKUPS_DIR / f'{construction}_construction' / f'ae_scaler_{label.replace('*', str(epoch + 1))}.pkl')
 
@@ -40,12 +43,12 @@ def prep_training(load):
     return model, criterion, optimizer, scheduler
 
 
-def run_epoch(model, optimizer, criterion, scheduler, losses, epoch, epochs, training_features):
+def run_epoch(model, optimizer, criterion, scheduler, losses, epoch, epochs, training_features, device):
     model.train()
     total_loss = 0.0
     num_batches = 0
     for batch in training_features:
-        x_batch = batch[0]
+        x_batch = batch[0].to(device)
 
         optimizer.zero_grad()
         recon = model(x_batch)
@@ -74,6 +77,13 @@ def train_model(load=False, epochs=20, features=None, batch_size=2048, update_sc
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
     LOGGER.info('Autoencoder began training')
 
     if not p.processed_dataset_exists():
@@ -83,11 +93,12 @@ def train_model(load=False, epochs=20, features=None, batch_size=2048, update_sc
 
     x_train = create_dataset(features, batch_size, update_scaler=update_scaler)
     model, criterion, optimizer, scheduler = prep_training(load=load)
+    model.to(device)
     losses = []
 
     # training loop
     for epoch in tqdm(range(epochs), total=epochs, desc='ae training'):
-        run_epoch(model, optimizer, criterion, scheduler, losses, epoch, epochs, x_train)
+        run_epoch(model, optimizer, criterion, scheduler, losses, epoch, epochs, x_train, device)
         if save_backup and (epoch + 1) % backup_interval == 0:
             save_interval(model, construction, label, epoch, optimizer, losses)
             losses = []

@@ -1,5 +1,4 @@
 from sklearn.ensemble import RandomForestClassifier
-import pandas as pd
 import joblib as jb
 import util.paths as p
 
