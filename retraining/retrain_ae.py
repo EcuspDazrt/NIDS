@@ -7,7 +7,7 @@ from training.ae_train import train_model
 from models.definitions.autoencoder import construct_model, get_error
 from scripts.build_dataset import create_dataset
 
-from util.thresholds import get_thresholds, recalibrate_ae_thresholds
+from util.thresholds import get_thresholds, calibrate_ae_thresholds
 from util.logger import get_logger
 
 LOGGER = get_logger(__name__)
@@ -134,7 +134,7 @@ def start_offline_train(defenses=None, flow_ids=None, validation_path=None):
         normal_fractions = {'Initial normal': normal_fraction, 'Retrained normal': retrained_normal_fraction} # compute both normal fractions
         drifted, rolled_back = check_drift(normal_fractions=normal_fractions) # use normal fractions to check drift
 
-    recalibrate_ae_thresholds(new_model)
+    calibrate_ae_thresholds(new_model)
     LOGGER.info('Offline training finished')
     return drifted, rolled_back
 
@@ -177,4 +177,4 @@ def save_backup_with_metadata(model, pre_loss, post_loss, normal_fraction, ae_th
 
 
 if __name__ == '__main__':
-    recalibrate_ae_thresholds(construct_model(load=True))
+    calibrate_ae_thresholds(construct_model(load=True))

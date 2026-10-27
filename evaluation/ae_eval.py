@@ -7,7 +7,7 @@ from evaluation.helper import print_report, print_indented
 from util.thresholds import get_thresholds
 from util.feature_retrieval import get_ae_testing
 from scripts.build_dataset import create_dataset
-from retraining.retrain_ae import recalibrate_ae_thresholds
+from retraining.retrain_ae import calibrate_ae_thresholds
 from models.definitions.autoencoder import construct_model, get_error
 from inference.inference import categorize_risk
 
@@ -89,8 +89,8 @@ def run_manual_evaluation(construction, features_benign_path, features_malicious
     for path in model_paths:
         LOGGER.info(f'Evaluating {path.stem.replace('ae_model_', '').replace('_', ' ')}\n')
         model = construct_model(l1=l1, l2=l2, l3=l3)
-        model.load_state_dict(torch.load(path))
-        recalibrate_ae_thresholds(model)
+        model.load_state_dict(torch.load(path, map_location=torch.device('cpu')))
+        calibrate_ae_thresholds(model)
         run_eval(model, features_benign_path=features_benign_path, features_malicious_path=features_malicious_path)
 
 def evaluate_model(manual_eval=False, return_eval=False, construction='', features_benign_path=None, features_malicious_path=None):

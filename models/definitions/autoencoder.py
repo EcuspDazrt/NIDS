@@ -35,7 +35,7 @@ def construct_model(load=False, l1=32, l2=16, l3=8):
     if load:
         if not p.ae_exists():
             return None
-        model.load_state_dict(torch.load(p.AE_WEIGHTS_PATH))
+        model.load_state_dict(torch.load(p.AE_WEIGHTS_PATH, map_location=torch.device('cpu')))
 
     return model
 

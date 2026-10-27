@@ -57,23 +57,11 @@ def dump_thresholds(thresholds):
         json.dump(thresholds, f)
 
 
-def recalibrate_ae_thresholds(ae):
-    LOGGER.info('[START] AE category threshold recalibration')
-    benign_features = get_ae_features_benign_testing(dataset=True)
-
-    ae.eval()
-    error = get_error(ae, benign_features)
-
-    ae_binary, ae_category_thresholds = calculate_ae_thresholds(None, None, error)
-    replace_ae_thresholds(ae_binary, ae_category_thresholds)
-
-    LOGGER.info(f'[COMPLETE] AE category threshold recalibration: {ae_binary}, {ae_category_thresholds}')
-
-
-def calibrate_ae_thresholds():
+def calibrate_ae_thresholds(ae=None):
     LOGGER.info('[START] AE threshold calibration')
-    ae = construct_ae(load=True)
-    ae.eval()
+    if ae is None:
+        ae = construct_ae(load=True)
+        ae.eval()
 
     testing_features = get_ae_testing()
     ae_benign_features = create_dataset(testing_features['ae_testing_benign'], loader=False)
