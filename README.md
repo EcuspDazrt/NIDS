@@ -50,6 +50,8 @@ At a high level, the system has four stages: **capture â†’ feature extraction â†
 
 ## Demos
 
+https://github.com/user-attachments/assets/c385abda-af97-4d06-8694-1b94fa0b7c3c
+
 ![NIDS dashboard showing an alert](docs/images/dashboard.png)
 
 
