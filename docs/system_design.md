@@ -101,7 +101,7 @@ The two models have meaningfully different latency profiles: the Random Forest p
 while the Autoencoder involves a forward pass through a neural network and is slightly more expensive. 
 Both are expected to operate well within acceptable latency bounds for flow-level (rather than packet-level) inference. 
 Bottlenecks are most likely to occur at the packet capture and flow aggregation stage under high-throughput conditions; 
-this is the primary constraint motivating the planned multiprocess architecture.
+this is the primary constraint motivating the multiprocess architecture.
 
 ## 6. Limitations
 ### 6.1 Retraining the auto-encoder
