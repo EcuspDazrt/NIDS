@@ -38,7 +38,7 @@ def extract_features_rf(df, label="", save_type=None, experiment=False):
     df.columns = df.columns.str.strip()
 
     d = df[(df['Total Fwd Packets'] == 2) & (df['Fwd Packet Length Max'] > df['Fwd Packet Length Min'])]
-    print((d['Fwd Packet Length Std'] / (d['Fwd Packet Length Max'] - d['Fwd Packet Length Min'])).describe())
+    # print((d['Fwd Packet Length Std'] / (d['Fwd Packet Length Max'] - d['Fwd Packet Length Min'])).describe())
 
     # df = df.dropna(how='all')  # drop rows where every column is null
     # df = df.dropna(subset=['Destination Port', 'Flow Duration', 'Protocol'])  # drop rows missing critical fields
@@ -181,7 +181,7 @@ def extract_features_ae(df, label="", save_type=None, experiment=False):
 
     null_counts = df.isnull().sum()
     if null_counts.any():
-        LOGGER.warning('Null values in source data:\n{null_counts[null_counts > 0]}')
+        LOGGER.warning(f'Null values in source data:\n{null_counts[null_counts > 0]}')
 
     features = pd.DataFrame()
 

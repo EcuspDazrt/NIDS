@@ -1,6 +1,10 @@
-# NIDS — Network Intrusion Detection System
+# NIDS: Network Intrusion Detection System
 
-A real-time network intrusion detection system (NIDS) that continuously monitors live network traffic, extracts behavioral features, and uses an ensemble of machine-learning models to identify malicious activity with low latency and high reliability. The goal is to approximate how modern security platforms detect attacks in production environments.
+A real-time network intrusion detection system (NIDS) that 
+continuously monitors live network traffic, extracts behavioral features, 
+and uses a multi-model pipeline to identify malicious 
+activity with low latency. The goal is to approximate how modern 
+security platforms detect attacks in production environments.
 
 ---
 
@@ -15,11 +19,11 @@ At a high level, the system has four stages: **capture → feature extraction �
 ```
 [Network Interface]
        ↓
-[Packet Capture — LibPcap]
+[Packet Capture - LibPcap]
        ↓
-[Flow Aggregator — extracts per-flow behavioral features]
+[Flow Aggregator - extracts per-flow behavioral features]
        ↓
-[Feature Store — multiprocessing queue]
+[Feature Store - multiprocessing queue]
        ↓
 [ML Inference Layer]
    ├── Random Forest (supervised classifier)
@@ -34,7 +38,7 @@ At a high level, the system has four stages: **capture → feature extraction �
 
 **Packet Capture:** LibPcap sniffs raw packets from the network interface and groups them into flows (bidirectional streams identified by 6-tuple: (epoch-ID, source IP, destination IP, source port, destination port, protocol).
 
-**Feature Extraction:** Each flow is tracked in a flow table. As packets arrive, the system computes behavioral features — things like packet size statistics, inter-arrival times, flow duration, and byte ratios — that characterize how the flow behaves rather than what it contains.
+**Feature Extraction:** Each flow is tracked in a flow table. As packets arrive, the system computes behavioral features, things like packet size statistics, inter-arrival times, flow duration, and byte ratios, that characterize how the flow behaves rather than what it contains.
 
 **Feature Storage:** Extracted feature vectors are pushed into a shared flow-queue, enabling low-latency access across processes and multiprocess scaling.
 
@@ -43,6 +47,12 @@ At a high level, the system has four stages: **capture → feature extraction �
 **Alerting:** Flagged flows are written to a SQLite log and surfaced in a customtkinter GUI dashboard in real time.
 
 ---
+
+## Demos
+
+![NIDS dashboard showing an alert](docs/images/dashboard.png)
+
+
 
 ## Project Structure
 
@@ -59,9 +69,9 @@ NIDS/
 │   ├── nids_flows.db             # Stores flows for retraining and monitoring
 │   ├── nids_retraining.log       # Logs retraining events (failed and succeeded)
 │   └── nids_drift_check.log      # Logs drift checks and roll backs
-├── datasets/                     # Training datasets (not committed — see below)
+├── datasets/                     # Training datasets (not committed, see below)
 ├── docs/
-│   ├── adr/                      # Architecture Decision Records
+│   ├── ADR/                      # Architecture Decision Records
 │   ├── experiment_plan.md
 │   ├── feature_spec.md
 │   └── system_design.md
@@ -102,28 +112,28 @@ NIDS/
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.10+ (excluding Python 3.15)
 - Root/admin privileges for packet capture
 
 ### Install
 
 ```bash
 git clone https://github.com/EcuspDazrt/NIDS.git
-cd nids
+cd NIDS
 pip install -r requirements.txt
 ```
 
 
 ### Run
 
-#### Linux:
+#### For live-capture:
+*Linux:*
 ```bash
 # Requires elevated privileges for raw packet capture
-sudo python main.py --interface eth0
+sudo python main.py -i eth0
 ```
-#### Windows:  
-
-Find your device's "\Device\NPF_{YOUR-GUID-HERE}" or "\Device\Tcpip_{YOUR-GUID-HERE}":
+*Windows:*
+Find your device's interface:
 ```bash
 getmac /v
 ```
@@ -131,7 +141,21 @@ Use the transport name for either the Wi-Fi or Ethernet connection.
 
 Then run:
 ```bash
-python main.py --interface "\Device\NPF_{YOUR-GUID-HERE}"
+python main.py -i "\Device\NPF_{YOUR-GUID-HERE}"
+```
+
+#### For PCAP-playback:
+
+###### *If you do not enter any flag, it defaults to the pcap file committed to the repo*
+
+*Linux:*
+```bash
+sudo python main.py -p "ABSOLUTE-PCAP-PATH"
+```
+
+*Windows:*
+```bash
+python main.py -p "ABSOLUTE-PCAP-PATH"
 ```
 
 ---
@@ -144,23 +168,23 @@ Training data is not committed to this repo. To retrain, download the csv's at h
 
 ## Current Status & Roadmap
 
-| Feature                               | Status        |
-|---------------------------------------|---------------|
-| Packet capture + flow aggregation     | Working       |
-| Feature extraction                    | Working       |
-| Random Forest classifier              | Working       |
-| Autoencoder anomaly detector          | Working       |
-| SQLite alert log                      | Working       |
-| GUI dashboard                         | Working       |
-| Multi-process scaling                 | Working       |
-| Offline training pipeline             | Working       |
-| Evaluation vs. CIC-IDS-2017 benchmark | Working       |
-| Experimentation Results               | In Progress   |
+| Feature                                             | Status        |
+|-----------------------------------------------------|---------------|
+| Packet capture + flow aggregation                   | Working       |
+| Feature extraction                                  | Working       |
+| Random Forest classifier                            | Working       |
+| Autoencoder anomaly detector                        | Working       |
+| SQLite alert log                                    | Working       |
+| GUI dashboard                                       | Working       |
+| Multi-process scaling                               | Working       |
+| Offline training pipeline (retraining, drift check) | Working       |
+| Evaluation vs. CIC-IDS-2017 benchmark               | Working       |
+| Experimentation Results                             | In Progress   |
 
 ---
 
 ## Documentation
 
-- [Feature Specification](docs/feature_spec.md) — detailed definitions of all extracted flow features
-- [System Design](docs/system_design.md) — architecture decisions and component breakdown
-- [Architecture Decision Records](docs/ADR) — log of key technical decisions and their rationale
+- [Feature Specification](docs/feature_spec.md): detailed definitions of all extracted flow features
+- [System Design](docs/system_design.md): architecture decisions and component breakdown
+- [Architecture Decision Records](docs/ADR): log of key technical decisions and their rationale

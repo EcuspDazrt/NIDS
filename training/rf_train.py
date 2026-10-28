@@ -7,7 +7,7 @@ from util.logger import get_logger
 LOGGER = get_logger(__name__)
 
 def create_model():
-    LOGGER.info('Rf began training')
+    LOGGER.info('RF began training')
     rf = RandomForestClassifier(
         n_estimators=300,
         max_depth=None,
@@ -21,11 +21,11 @@ def create_model():
         return
 
     training_features = get_rf_features_training()
-    training_labels = get_rf_labels_training()['Label'].values
+    training_labels = get_rf_labels_training()
 
     rf.fit(training_features, training_labels)
     jb.dump(rf, p.RF_MODEL_PATH)
-    LOGGER.info('Autoencoder finished training')
+    LOGGER.info('RF finished training')
 
 if __name__ == '__main__':
     create_model()

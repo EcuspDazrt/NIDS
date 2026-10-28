@@ -57,6 +57,8 @@ if __name__ == "__main__":
     if interface:
         interface = interface.replace('Tcpip', 'NPF')
     pcap_file = args.pcap_file
+    if not pcap_file and not interface:
+        pcap_file = p.DATASETS_DIR / 'pcaps' / 'FIRST-2015_Hands-on_Network_Forensics_PCAP' / '2015-03-05' / 'snort.log.1425565276'
 
     if pcap_file and interface:
         raise(Exception('Only one of interface or pcap-file can be specified'))
