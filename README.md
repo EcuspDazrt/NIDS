@@ -125,6 +125,11 @@ cd NIDS
 pip install -r requirements.txt
 ```
 
+Then, download the asset files from the release and put them in `NIDS/datasets`. 
+- The pcap file is only needed for a demo
+- CIC-IDS-2017 dataset is only needed for the domain adaptation feature. 
+The system handles both ways you can put this folder into datasets.
+
 
 ### Run
 

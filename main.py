@@ -58,7 +58,9 @@ if __name__ == "__main__":
         interface = interface.replace('Tcpip', 'NPF')
     pcap_file = args.pcap_file
     if not pcap_file and not interface:
-        pcap_file = p.DATASETS_DIR / 'pcaps' / 'FIRST-2015_Hands-on_Network_Forensics_PCAP' / '2015-03-05' / 'snort.log.1425565276'
+        pcap_file = p.DATASETS_DIR / 'snort.log.1425565276'
+        if not pcap_file.exists():
+            raise Exception(f'Download the PCAP file in the latest release.')
 
     if pcap_file and interface:
         raise(Exception('Only one of interface or pcap-file can be specified'))
